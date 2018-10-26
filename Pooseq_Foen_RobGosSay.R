@@ -48,8 +48,6 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
 }
 
 
-#####
-# Merge Fst info and calculate PBS and Kirkpatrick's Rar:
 {
   #head(RobSayFst)
   #head(RobSNPstats)
@@ -81,9 +79,16 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
   FstAll[RSFst.nonneg == 1.0, RSFst.nonneg := 0.99999]
 
   # Set a copy number threshold as 20 for the minimum and 150 for the maximum.
+  min_cov<- 40
+  max_cov<-150
   FstAll[,NreadsOK:=F]
-  FstAll[GosNreads >19 & RobNreads >19 & SayNreads >19 & GosNreads <151 & RobNreads <151 & SayNreads <151,
+  FstAll[GosNreads >=min_cov & RobNreads >=min_cov & SayNreads >=min_cov & GosNreads <=max_cov & RobNreads <=max_cov & SayNreads <=max_cov,
          NreadsOK:= T]
+} 
+
+#################################################################
+  #  3.  Combined genome-wide plots of PoolSeq, Pi, Tajima's D
+#################################################################
   
   # Caculate PBS for Rob branch, Gos branch, and Marine branch
   # From Sequencing of Fifty Human Exomes Reveals Adaptation to High Altitude Supplement
@@ -91,88 +96,106 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
   FstAll[,pbs.g := (-log(1-FstAll$GRFst.nonneg )) + (- log(1-FstAll$GSFst.nonneg )) - (- log(1-FstAll$RSFst.nonneg ))/2]
   FstAll[,pbs.m := (-log(1-FstAll$RSFst.nonneg )) + (- log(1-FstAll$GSFst.nonneg )) - (- log(1-FstAll$GRFst.nonneg ))/2]
 
-  #########
-  ### ********** NEED TO GET NUMERIC LG and cumulative position data for plotting 
+  ## ********** NEED TO GET NUMERIC LG and cumulative position data for plotting 
   FstAll[substr(LG, 1, 2) == "MT", LGn := 0]
   FstAll[substr(LG, 1, 2) == "gr", LGn := as.numeric(as.roman(substr(LG, 6, nchar(LG))))]
   FstAll[substr(LG, 1, 2) == "sc", LGn := as.numeric(substr(LG, 10, nchar(LG)))] 
   
-}
-
-##############
+  FstAll[,PBS.percentile.unsmoothed:=ecdf(pbs.r)(pbs.r)]
+  FstAll_top5<-FstAll[PBS.percentile.unsmoothed > 0.95,]
 # Smoothed Fst and PBS
 rm(list=setdiff(ls(), "FstAll"))
+
 windowsize <- 1000 
 
-FstAll[,SNP_window:= (Pos%/%windowsize)*windowsize]
+# Put every SNP into a bin, bin 1000 include all the SNPs from 1-1000
+FstAll[,SNP_window:= (Pos%/%windowsize+1)*windowsize]
+
+# Smooth SNPs, only use the SNPs, which as reads number satisfy conditions
 temp_BinSNPs<-FstAll[NreadsOK==T,.("PBS.r" = mean(pbs.r), "nSNPs" = .N),by=.(LGn, SNP_window)]
 
 # Create a data.table with the full length of genome for temp_BinSNPs to join in.
 chrlengths <- read.table("Stickle_chr_lengths.txt", sep = ",")
 chr <- FstAll[, .(chr_length = max(Pos)), by = LGn]
-chr[2:22,chr_length:= as.vector(as.matrix(Chrlengths) )]
+chr[2:22,chr_length:= as.vector(as.matrix(chrlengths) )]
 chr[,cumulative_chrlengths := cumsum(chr_length)]
 chr[,cumulative_chrSTART := shift(cumulative_chrlengths,1,0,"lag")]
-chr_forjoin<-chr[rep(1:.N,chr_length%/%windowsize+1)][,window_pos := ((1:.N)-1)*windowsize, by = LGn]
+chr_forjoin<-chr[rep(1:.N,chr_length%/%windowsize+1)][,window_pos := ((1:.N))*windowsize, by = LGn]
 
-# join the smoothed Fst with the chr_forjoin, the latter has the full length of chromosome
+# Join the smoothed Fst table with the chr_forjoin, the latter has the full length of chromosome
 setkey(chr_forjoin, LGn, window_pos)
 setkey(temp_BinSNPs, LGn, SNP_window)
 
-BinSNPs <- temp_BinSNPs[chr_forjoin]
-BinSNPs[,cumulative_window_pos:=SNP_window+cumulative_chrSTART]
-BinSNPs <- BinSNPs[,!c("chr_length","cumulative_chrlengths","cumulative_chrSTART")]
-BinSNPs[is.na(nSNPs),nSNPs:=0]
-BinSNPs[is.na(PBS.r),PBS.r:=0]
-BinSNPs[,Pos := SNP_window + 1000]
+PBS_binned <- temp_BinSNPs[chr_forjoin]
+PBS_binned[,PBS.percentile.score:=1-ecdf(PBS.r)(PBS.r)]
+PBS_binned[,cumulative_window_pos:=SNP_window+cumulative_chrSTART]
+PBS_binned <- PBS_binned[,!c("chr_length","cumulative_chrlengths","cumulative_chrSTART")]
+#BinSNPs[is.na(nSNPs),nSNPs:=0]
+#BinSNPs[is.na(PBS.r),PBS.r:=0]
 
 ######################
 #  Load Tajima's D 
 TajD_r_filelist = list.files(path = "./TajD/subsample50x_mincount2_finished", pattern="Rob.Q15", full.names = T) 
 TajD_r <- do.call(rbind,lapply(TajD_r_filelist,function(i){fread(i, sep = "\t", header = F)}))
-colnames(TajD_r) <- c("LG", "Pos", "Nsnp.r", "x.r", "D.r")
+colnames(TajD_r) <- c("LG", "Pos", "D.nSNPs", "x.r", "D.r")
 
 TajD_r[substr(LG, 1, 2) == "MT", LGn := 0]
 TajD_r[substr(LG, 1, 2) == "gr", LGn := as.numeric(as.roman(substr(LG, 6, nchar(LG))))]
 TajD_r[substr(LG, 1, 2) == "sc", LGn := as.numeric(substr(LG, 10, nchar(LG)))]
 TajD_r<-TajD_r[,D.r := as.numeric(D.r)]
-TajD_r<-TajD_r[!is.na(D.r)]
+TajD_r[,D.percentile.score:=ecdf(D.r)(D.r)]
+#TajD_r<-TajD_r[!is.na(D.r)]
 setorder(TajD_r, LGn,Pos)
 
 setkey(TajD_r, LGn, Pos)
-setkey(BinSNPs, LGn, Pos)
+setkey(PBS_binned, LGn, SNP_window)
 
-TajD_PBS <- TajD_r[BinSNPs]
-TajD_PBS_cleaned <- TajD_PBS[,.(LGn,Pos,cumulative_window_pos,"D_nSNPs" = Nsnp.r,D.r ,"PBS_nSNPs" = nSNPs, PBS.r)]
+TajD_PBS <- TajD_r[PBS_binned]
+TajD_PBS_cleaned <- TajD_PBS[,.(LGn,Pos,cumulative_window_pos,D.nSNPs,D.r, D.percentile.score,"PBS.nSNPs" = nSNPs, PBS.r, PBS.percentile.score)]
 
-####
+#############
+# Load Pi
 Pi_r_filelist = list.files(path = "./per_chromosom_pi", pattern="Rob.Q15", full.names = T) 
 Pi_r <- do.call(rbind,lapply(Pi_r_filelist,function(i){fread(i, sep = "\t", header = F)}))
-colnames(Pi_r) <- c("LG", "Pos", "Pi_nSNPs", "x.r", "Pi.r")
+colnames(Pi_r) <- c("LG", "Pos", "Pi.nSNPs", "x.r", "Pi.r")
 
 Pi_r[substr(LG, 1, 2) == "MT", LGn := 0]
 Pi_r[substr(LG, 1, 2) == "gr", LGn := as.numeric(as.roman(substr(LG, 6, nchar(LG))))]
 Pi_r[substr(LG, 1, 2) == "sc", LGn := as.numeric(substr(LG, 10, nchar(LG)))]
 Pi_r<-Pi_r[,Pi.r := as.numeric(Pi.r)]
-Pi_r<-Pi_r[!is.na(Pi.r)]
+Pi_r[,Pi.percentile.score:=ecdf(Pi.r)(Pi.r)]
+#Pi_r<-Pi_r[!is.na(Pi.r)]
 setorder(Pi_r, LGn,Pos)
 
-### to convert 2500 to 1000
-
 setkey(Pi_r, LGn, Pos)
-setkey(BinSNPs, LGn, Pos)
+setkey(TajD_PBS_cleaned, LGn, Pos)
 
-TajD_PBS <- Pi_r[BinSNPs]
-TajD_PBS_cleaned <- TajD_PBS[,.(LGn,Pos,cumulative_window_pos,"D_nSNPs" = Nsnp.r,D.r ,"PBS_nSNPs" = nSNPs, PBS.r)]
+# rolljoin in data.table can assign values to its closest neighbor. -Inf means backward rolling. Note that Pi.nSNPs is the sum of those 2-3 rows
+Pi_TajD_PBS <- Pi_r[TajD_PBS_cleaned,roll = -Inf]
+Pi_TajD_PBS[,combined.percentile.score:=Pi.percentile.score*D.percentile.score*PBS.percentile.score]
+Pi_TajD_PBS[,combined.percentile:=ecdf(combined.percentile.score)(combined.percentile.score)]
+setorder(Pi_TajD_PBS,combined.percentile)
+Pi_TajD_PBS_cleaned <- Pi_TajD_PBS[,.(LGn,Pos,cumulative_window_pos, 
+                                      Pi.nSNPs, Pi.r, Pi.percentile.score,
+                                      D.nSNPs, D.r, D.percentile.score,
+                                      PBS.nSNPs, PBS.r, PBS.percentile.score,
+                                      combined.percentile.score,combined.percentile)]
+combined_top5<-Pi_TajD_PBS_cleaned[combined.percentile<0.05,]
+
+fwrite(combined_top5, "Pi_TajD_PBS_smoothed_top5percent.csv")
+fwrite(Pi_TajD_PBS_cleaned, "Pi_TajD_PBS_smoothed_full.csv")
 
 
+#################################################################
+#  4.  Identify main sites of interest
+#################################################################
 
+source("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/R Code/stickleback_poolseq_RobGosSay/gwscaR_plot.R")
+combined_top5_df <- as.data.frame(combined_top5)
+FstAll_top5_df <- as.data.frame(FstAll_top5[FstAll_top5$NreadsOK==T,])
+Pi_TajD_PBS_cleaned_df <- as.data.frame(Pi_TajD_PBS_cleaned)
 
-
-
-
-
-TajD_PBS_cleaned[LGn == 1,]
-plot(x = TajD_PBS_cleaned[,cumulative_window_pos], y = TajD_PBS_cleaned[,c(PBS.r)])
-par(new = T)
-plot(x = TajD_PBS_cleaned[,cumulative_window_pos], y = TajD_PBS_cleaned[,c(D.r)])
+fst.plot(fst.dat = FstAll_top5_df ,scaffold.widths=chr[,.(LGn,chr_length)],scaffs.to.plot= 1:21,
+        fst.name="pbs.r", chrom.name="LGn", bp.name="Pos",
+        y.lim=c(8,25),xlabels=1:21,xlab.indices=NULL,
+        axis.size=0.5,pt.cols=c("darkgrey","lightgrey"),pt.cex=0.5)
