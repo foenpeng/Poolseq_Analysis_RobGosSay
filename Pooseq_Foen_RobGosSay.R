@@ -52,12 +52,8 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
   SaySNPstats <- SaySNPstats[,-1]
 }
 
-
+### Pre-proceesing Fst data
 {
-  #head(RobSayFst)
-  #head(RobSNPstats)
-  #head(SaySNPstats)
-  
   FstAll <- data.table(GosSNPstats[,c(2:7)], RobSNPstats[,6:7], SaySNPstats[,6:7], GosRobFst[,3], GosSayFst[,3], RobSayFst[,3])
   head(FstAll)
   colnames(FstAll) <- c("LG", "Pos", "Base_A", "Base_a", "GosN_A", "GosNreads", "RobN_A", "RobNreads", "SayN_A", "SayNreads", "GRFst", "GSFst" , "RSFst")
@@ -65,15 +61,14 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
   FstAll[,RobFreqA := FstAll$RobN_A/FstAll$RobNreads]
   FstAll[,SayFreqA := FstAll$SayN_A/FstAll$SayNreads]
 
-  
   # Clean up some memory
   rm(GosRobFst, GosSayFst, GosSNPstats, RobSayFst, RobSNPstats, SaySNPstats)
   
   # The Fst = Nan all reflect instances where allele frequencies are exactly the same in two pops so Fst should be = 0, 
-  # Set all the NA and negative Fst as 0. ~6000 (0.1% of all) SNPs of GSFst have value between 0 and 0.0001.
-  FstAll[,GRFst.nonneg := replace(GRFst, which(GRFst < 0 | is.na(GRFst)), 0.0001)]
-  FstAll[,GSFst.nonneg := replace(GSFst, which(GSFst < 0 | is.na(GSFst)), 0.0001)]
-  FstAll[,RSFst.nonneg := replace(RSFst, which(RSFst < 0 | is.na(RSFst)), 0.0001)]
+  # Set all the NA and negative Fst as 0.0001 ~6000 (0.1% of all) SNPs of GSFst have value between 0 and 0.0001.
+  FstAll[,GRFst.nonneg := replace(GRFst, which(GRFst < 0 | is.na(GRFst)), 0)]
+  FstAll[,GSFst.nonneg := replace(GSFst, which(GSFst < 0 | is.na(GSFst)), 0)]
+  FstAll[,RSFst.nonneg := replace(RSFst, which(RSFst < 0 | is.na(RSFst)), 0)]
 
   # When Fst = 1, when we do log(1-Fst), it becomes infinite so I replace 1.0 with 0.99
   # If I set it to 0.999 or 0.9999, it will create big PBS, because -log(1-0.9999) is a big value
@@ -88,7 +83,6 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
   FstAll[,NreadsOK:=F]
   FstAll[GosNreads >=min_cov & RobNreads >=min_cov & SayNreads >=min_cov & GosNreads <=max_cov & RobNreads <=max_cov & SayNreads <=max_cov,
          NreadsOK:= T]
-
 } 
 
 #################################################################
@@ -97,24 +91,18 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
   
   # Caculate PBS for Rob branch, Gos branch, and Marine branch
   # From Sequencing of Fifty Human Exomes Reveals Adaptation to High Altitude Supplement
-  # Note that according to the above paper, it should be the three terms divided by 2, instead of the last term divided by 2, as in Dan's version of code
   FstAll[,pbs.r := ((-log(1-FstAll$GRFst.nonneg )) + (- log(1-FstAll$RSFst.nonneg )) - (- log(1-FstAll$GSFst.nonneg )))/2]
-  #FstAll[,pbs.g := ((-log(1-FstAll$GRFst.nonneg )) + (- log(1-FstAll$GSFst.nonneg )) - (- log(1-FstAll$RSFst.nonneg )))/2]
-  #FstAll[,pbs.m := ((-log(1-FstAll$RSFst.nonneg )) + (- log(1-FstAll$GSFst.nonneg )) - (- log(1-FstAll$GRFst.nonneg )))/2]
+  FstAll[,pbs.g := ((-log(1-FstAll$GRFst.nonneg )) + (- log(1-FstAll$GSFst.nonneg )) - (- log(1-FstAll$RSFst.nonneg )))/2]
+  #FstAll[,pbs.s := ((-log(1-FstAll$RSFst.nonneg )) + (- log(1-FstAll$GSFst.nonneg )) - (- log(1-FstAll$GRFst.nonneg )))/2]
   FstAll[,pbs.r.percentile:=ecdf(pbs.r)(pbs.r)]
-  
-  # Caculate a statistic which is independent of scale, Relative Branch Length
-  FstAll[,rbl.r := (GRFst.nonneg  + RSFst.nonneg  - GSFst.nonneg)/(GRFst.nonneg  + RSFst.nonneg  + GSFst.nonneg)]
-  #FstAll[,rbl.g := (GRFst.nonneg  + GSFst.nonneg  - RSFst.nonneg)/(GRFst.nonneg  + RSFst.nonneg  + GSFst.nonneg)]
-  #FstAll[,rbl.s := (GSFst.nonneg  + RSFst.nonneg  - GRFst.nonneg)/(GRFst.nonneg  + RSFst.nonneg  + GSFst.nonneg)]
-  FstAll[,rbl.r.percentile:=ecdf(rbl.r)(rbl.r)]
   
   # Ra calculation
   FstAll[,Ra.r := (GRFst.nonneg  + RSFst.nonneg  - GSFst.nonneg)/GSFst.nonneg ]
+  FstAll[,Ra.r.percentile:=ecdf(Ra.r)(Ra.r)]
   
   # Calculate dxy between Gos and Rob fishes.dxy = (p1∗(1−p2))+(p2∗(1−p1)). According to "Comparative analysis examining patterns of genomic differentiation across multiple episodes of population divergence in birds" 
-  FstAll[,dxy.GR := GosFreqA  * (1- RobFreqA)  + RobFreqA * (1- GosFreqA)] 
-  FstAll[,dxy.GR.percentile:=ecdf(dxy.GR)(dxy.GR)]
+  # FstAll[,dxy.GR := GosFreqA  * (1- RobFreqA)  + RobFreqA * (1- GosFreqA)] 
+  # FstAll[,dxy.GR.percentile:=ecdf(dxy.GR)(dxy.GR)]
   
   # GET NUMERIC LG
   FstAll[substr(LG, 1, 2) == "MT", LGn := 0]
@@ -124,6 +112,7 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
   # remove some columns, since FstAll takes too much RAM
   FstAll[,c(1,3:13):= NULL]
   
+  # add chi.square test result to each SNP
   if(file.exists("chisq_test_all.csv")){
     chisq_test_all<-fread("chisq_test_all.csv")
     setkey(FstAll,LGn,Pos)
@@ -141,7 +130,7 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
     r1 <- chisq.test(as.table(rbind(c(v1,v2-v1),c(v3,v4-v3))))$p.value
     r2 <- chisq.test(as.table(rbind(c(v1,v2-v1),c(v5,v6-v5))))$p.value
     return(list(r1,r2))
-  }
+    }
   
   FstAll[PBS.percentile.unsmoothed > 0.95,c("chi_RG","chi_RS"):=chi_fun(RobN_A,RobNreads,GosN_A,GosNreads,SayN_A,SayNreads),by = seq_len(nrow(FstAll[PBS.percentile.unsmoothed > 0.95]))]
   
@@ -153,11 +142,11 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
   pbs_r_top5<-FstAll[PBS.percentile.unsmoothed > 0.95,]
   setorder(pbs_r_top5,-pbs.r)
   fwrite(pbs_r_top5,"pbs.r_top5.csv")
-  
+  }
   #To chi-square test all SNPs:
   #FstAll[RobNreads !=0 & GosNreads !=0 & SayNreads !=0,c("chi_RG","chi_RS"):=chi_fun(RobN_A,RobNreads,GosN_A,GosNreads,SayN_A,SayNreads),by = seq_len(nrow(FstAll[RobNreads !=0 & GosNreads !=0 & SayNreads !=0]))]
   #fwrite(FstAll[,.(LG,LGn,Pos,SNP_window,Base_A,Base_a,GosN_A,GosNreads,RobN_A,RobNreads,SayN_A,SayNreads,chi_RG,chi_RS,chiOK)],"chisq_test_all.csv")
-  }
+  
 ############ Smoothing ################  
 # Smoothed Fst and PBS
 rm(list=setdiff(ls(), "FstAll"))
@@ -168,13 +157,11 @@ windowsize <- 5000
 FstAll[,SNP_window:= ((Pos-1)%/%windowsize+1)*windowsize]
 
 # Smooth SNPs, only use the SNPs, which as reads number satisfy conditions
-temp_BinSNPs<-FstAll[NreadsOK==T&chiOK==T,.("PBS.nSNPs" = .N,"PBS.r" = mean(pbs.r), "DXY.GR"=mean(dxy.GR), "RBL.r" = mean(rbl.r), "RA.r" = mean(Ra.r)),by=.(LGn, SNP_window)]
+temp_BinSNPs<-FstAll[NreadsOK==T&chiOK==T,.("PBS.nSNPs" = .N,"PBS.r" = mean(pbs.r)),by=.(LGn, SNP_window)]
 
 # Create a data.table with the full length of genome for temp_BinSNPs to join in.
 # I should not use chr length from the table "Stickle_chr_lengths.txt", as it truncates a lot of sequenced chromosomes and lost SNPs.
-#chrlengths <- read.table("Stickle_chr_lengths.txt", sep = ",")
 chr <- FstAll[, .(chr_length = max(Pos)), by = LGn]
-#chr[2:22,chr_length:= as.vector(as.matrix(chrlengths) )]
 chr[,cumulative_chrlengths := cumsum(chr_length)]
 chr[,cumulative_chrSTART := shift(cumulative_chrlengths,1,0,"lag")]
 chr_forjoin<-chr[rep(1:.N,chr_length%/%windowsize+1)][,window_pos := ((1:.N))*windowsize, by = LGn]
@@ -278,15 +265,40 @@ source("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/R Code/s
 combined_top5_df <- as.data.frame(combined_top5)
 pbs_r_top5_df <- as.data.frame(pbs_r_top5[pbs_r_top5$NreadsOK==T &pbs_r_top5$chiOK==T &PBS.percentile.unsmoothed >0.99,])
 PBS_binned_df <- as.data.frame(PBS_binned)
-
+FstAll_df<- as.data.frame(FstAll[NreadsOK==T,c(LGn,Pos,pbs.r)])
 Pi_TajD_PBS_cleaned_df <- as.data.frame(Pi_TajD_PBS_cleaned)
 
-fst.plot(fst.dat = PBS_binned_df ,scaffold.widths=chr[,.(LGn,chr_length)],scaffs.to.plot= 1:21,
-        fst.name="DXY.GR", chrom.name="LGn", bp.name="Pos",
-        y.lim=c(0,1),xlabels=0:21,xlab.indices=NULL,
-        axis.size=0.5,pt.cols=c("darkgrey","lightgrey"),pt.cex=0.5)
+fst.plot(fst.dat = PBS_binned_df ,scaffold.widths=chr[,.(LGn,chr_length)],scaffs.to.plot= 21,
+        fst.name="pbs.r", chrom.name="LGn", bp.name="Pos",
+        y.lim=c(0,6),xlabels=21,xlab.indices=NULL,
+        axis.size=0.5,pt.cols=c("darkblue","darkgreen"),pt.cex=0.5)
 
+# Dan's plot function from file Graphics function.R
+{
+  plotgene <- function(dat, focalLG, specifybps = F, minpos, maxpos, Genestart, Geneend, Genename, popstoplot = c("R", "G", "M")){
+  dat[,pos.tr:=Pos/1000000]
+  npops <- length(popstoplot)
+  par(mfrow = c(npops,1),mar = c(1.5,4,0.5,0.5), mgp = c(2, 0.75, 0), oma = c(3,0,2,0))
+  if(specifybps == F){
+    minpos <- 0
+    maxpos <- dat[LGn==focalLG,max(Pos)]
+  }
+  ymin <- dat[LGn==focalLG,min(pbs.r,na.rm=T)]
+  ymax <- dat[LGn==focalLG,max(pbs.r,na.rm=T)*1.2]
+  options(scipen=5)
+  if("R" %in% popstoplot) {
+    plot(pbs.r~pos.tr,dat[LGn %in% c(focalLG) & Pos > minpos & Pos < maxpos,], pch = 16, cex = 0.6, axes = T, xlab = "", ylab = "PBS ROB", col = "darkgreen", ylim = c(ymin,ymax))
+    smoothingSpline = smooth.spline(dat[LGn %in% c(focalLG) & Pos > minpos & Pos < maxpos & !is.na(pbs.r),.(pbs.r,pos.tr)])
+    lines(smoothingSpline,col='red')
+    #rect(Genestart/1000000, 0,  Geneend/1000000,ymax, border = rgb(1,0,0,0.5) , lwd = 2, col = rgb(1,0,0,0.5))
+  }
+  #text(Genestart/1000000+0.3, 0.9*ymax, Genename)
+  #mtext("Position on LG (mb)", side = 1,  outer = T , line = 1)
+  #mtext(paste("LG", focalLG), side = 3,  outer = T )
+}
 
+plotgene(PBS_binned,focalLG=1, specifybps = F, minpos, maxpos, Genestart=10000000, Geneend=20000000, Genename="123", popstoplot = c("R"))
+}
 #################################################################
 #  6.  Zoomed-in on sites of interest
 #################################################################
@@ -323,3 +335,8 @@ setorder(SNP_info,PBS.percentile.score)
 SNP_gene_map<-foverlaps(SNP_info,gene_info,by.x = c("LGn","start","stop"))
 SNP_gene_map[duplicated(SNP_gene_map,by=c("gene.name"),)][1:20]
 fwrite(SNP_gene_map,"SNP_gene_map_5k_bin")
+
+
+###
+
+SNP_gene_map <- fread("./allele_freq_Fst/snp_gene_map", header = F, sep = "\t")
