@@ -1,10 +1,6 @@
 ####  Analysis of PoolSeq data for Weber and Steinel ms, speed up with data.table
 #### FP
 
-# To-do
-# 10.27, Chi-square test, check SNP difference among statistics, graph, annotation
-# it seems necessary to set threshold value for pbs.m and pbs.g, becasue if those two are really high, pbs.r tend to be high
-# chi-square test filtered those in top 5%
 
 ### PURPOSE:
 # 1. Establish that selection has acted on sites in Roberts, Gosling, and Marine populations.
@@ -54,13 +50,19 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
 
 ### Pre-proceesing Fst data
 {
+  
   FstAll <- data.table(GosSNPstats[,c(2:7)], RobSNPstats[,6:7], SaySNPstats[,6:7], GosRobFst[,3], GosSayFst[,3], RobSayFst[,3])
   head(FstAll)
   colnames(FstAll) <- c("LG", "Pos", "Base_A", "Base_a", "GosN_A", "GosNreads", "RobN_A", "RobNreads", "SayN_A", "SayNreads", "GRFst", "GSFst" , "RSFst")
   FstAll[,GosFreqA := FstAll$GosN_A/FstAll$GosNreads]
   FstAll[,RobFreqA := FstAll$RobN_A/FstAll$RobNreads]
   FstAll[,SayFreqA := FstAll$SayN_A/FstAll$SayNreads]
-
+  
+  # GET NUMERIC LG
+  FstAll[substr(LG, 1, 2) == "MT", LGn := 0]
+  FstAll[substr(LG, 1, 2) == "gr", LGn := as.numeric(as.roman(substr(LG, 6, nchar(LG))))]
+  FstAll[substr(LG, 1, 2) == "sc", LGn := as.numeric(substr(LG, 10, nchar(LG)))] 
+  
   # Clean up some memory
   rm(GosRobFst, GosSayFst, GosSNPstats, RobSayFst, RobSNPstats, SaySNPstats)
   
@@ -76,6 +78,28 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
   FstAll[GSFst.nonneg == 1.0, GSFst.nonneg := 0.99]
   FstAll[RSFst.nonneg == 1.0, RSFst.nonneg := 0.99]
 
+  # Add chi.square test result to each SNP
+  if(file.exists("chisq_test_all.csv")){
+    chisq_test_all<-fread("chisq_test_all.csv")
+    setkey(FstAll,LGn,Pos)
+    setkey(chisq_test_all,LGn,Pos)
+    FstAll<-FstAll[chisq_test_all]
+    rm(chisq_test_all)}
+  else{
+    chi_fun <- function(v1,v2,v3,v4,v5,v6){
+      #v1 is RobN_A, v2 is RobNreads
+      r1 <- chisq.test(as.table(rbind(c(v1,v2-v1),c(v3,v4-v3))))$p.value
+      r2 <- chisq.test(as.table(rbind(c(v1,v2-v1),c(v5,v6-v5))))$p.value
+      return(list(r1,r2))
+    }
+    FstAll[RobNreads !=0 & GosNreads !=0 & SayNreads !=0,c("chi_RG","chi_RS"):=chi_fun(RobN_A,RobNreads,GosN_A,GosNreads,SayN_A,SayNreads),by = seq_len(nrow(FstAll[RobNreads !=0 & GosNreads !=0 & SayNreads !=0]))]
+    # NA chi square test result indicate no difference AND both lakes in either allele have 0 counts
+    FstAll[is.na(chi_RG),chi_RG:=1]
+    FstAll[is.na(chi_RS),chi_RS:=1]
+    FstAll[,chiOK:= ifelse(chi_RG<0.05 & chi_RS<0.05, T, F)]
+    fwrite(FstAll[,.(LG,LGn,Pos,SNP_window,Base_A,Base_a,GosN_A,GosNreads,RobN_A,RobNreads,SayN_A,SayNreads,chi_RG,chi_RS,chiOK)],"chisq_test_all.csv")
+  }
+ 
   # Set a copy number threshold as 20 for the minimum and 200 for the maximum. And mark them.
   # if I set max at 150, there will be a lot SNPs which pass Chi square test but filtered because of read numebrs.
   min_cov<- 20
@@ -83,70 +107,79 @@ setwd("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Data")
   FstAll[,NreadsOK:=F]
   FstAll[GosNreads >=min_cov & RobNreads >=min_cov & SayNreads >=min_cov & GosNreads <=max_cov & RobNreads <=max_cov & SayNreads <=max_cov,
          NreadsOK:= T]
+  FstAll<-FstAll[NreadsOK==T,]
 } 
 
 #################################################################
   #  3.  Calculate PBS and smoothing
 #################################################################
-  
+
+
   # Caculate PBS for Rob branch, Gos branch, and Marine branch
   # From Sequencing of Fifty Human Exomes Reveals Adaptation to High Altitude Supplement
   FstAll[,pbs.r := ((-log(1-FstAll$GRFst.nonneg )) + (- log(1-FstAll$RSFst.nonneg )) - (- log(1-FstAll$GSFst.nonneg )))/2]
-  FstAll[,pbs.g := ((-log(1-FstAll$GRFst.nonneg )) + (- log(1-FstAll$GSFst.nonneg )) - (- log(1-FstAll$RSFst.nonneg )))/2]
+  #FstAll[,pbs.g := ((-log(1-FstAll$GRFst.nonneg )) + (- log(1-FstAll$GSFst.nonneg )) - (- log(1-FstAll$RSFst.nonneg )))/2]
   #FstAll[,pbs.s := ((-log(1-FstAll$RSFst.nonneg )) + (- log(1-FstAll$GSFst.nonneg )) - (- log(1-FstAll$GRFst.nonneg )))/2]
-  FstAll[,pbs.r.percentile:=ecdf(pbs.r)(pbs.r)]
-  
-  # Ra calculation
-  FstAll[,Ra.r := (GRFst.nonneg  + RSFst.nonneg  - GSFst.nonneg)/GSFst.nonneg ]
-  FstAll[,Ra.r.percentile:=ecdf(Ra.r)(Ra.r)]
+  #FstAll[,pbs.r.percentile:=ecdf(pbs.r)(pbs.r)]
   
   # Calculate dxy between Gos and Rob fishes.dxy = (p1∗(1−p2))+(p2∗(1−p1)). According to "Comparative analysis examining patterns of genomic differentiation across multiple episodes of population divergence in birds" 
-  # FstAll[,dxy.GR := GosFreqA  * (1- RobFreqA)  + RobFreqA * (1- GosFreqA)] 
-  # FstAll[,dxy.GR.percentile:=ecdf(dxy.GR)(dxy.GR)]
+  FstAll[,dxy.GR := GosFreqA  * (1- RobFreqA)  + RobFreqA * (1- GosFreqA)] 
+  FstAll[,dxy.RS := SayFreqA  * (1- RobFreqA)  + RobFreqA * (1- SayFreqA)] 
+  FstAll[,dxy.GS := GosFreqA  * (1- SayFreqA)  + SayFreqA * (1- GosFreqA)] 
+
+  # Calculate the absolute difference of allele frequencies
+  FstAll[,dp.GR := abs(GosFreqA  - RobFreqA)] 
+
+  # Because 0 denominator cause Ra infinity, bin SNP into windows before calucalting Ra
+  # function to bin SNP into windows
+  slideFunct <- function(data, window, step, FUN=mean){
+    total <- length(data)
+    if(total <= window){
+      result<- FUN(data)
+    }else{
+      spots <- seq(from=1, to=(total-window), by=step)
+      result <- vector(length = length(spots))
+      for(i in 1:length(spots)){
+        result[i] <- FUN(data[spots[i]:(spots[i]+window)])
+      }}
+    return(result)
+  }
   
-  # GET NUMERIC LG
-  FstAll[substr(LG, 1, 2) == "MT", LGn := 0]
-  FstAll[substr(LG, 1, 2) == "gr", LGn := as.numeric(as.roman(substr(LG, 6, nchar(LG))))]
-  FstAll[substr(LG, 1, 2) == "sc", LGn := as.numeric(substr(LG, 10, nchar(LG)))] 
+  windowsize<-10000
+  windowstep<-5000
+  cols<-c("dxy.GR","dxy.GS","dxy.RS","dp.GR","pbs.r")
+  win_10k<-FstAll[,c(list(nSNPs=slideFunct(Pos,window = windowsize, step = windowstep,FUN = max)),
+                     list(Pos=slideFunct(Pos,window = windowsize, step = windowstep,FUN = max)),
+                  lapply(.SD, slideFunct, window = windowsize, step = windowstep)),by=LGn,.SDcols = cols]
+ 
   
+  
+  # create an empty data.table to fill
+  chr <- FstAll[, .(chr_length = max(Pos)), by = LGn]
+  pop_div_bin<-chr[rep(1:.N,(chr_length)%/%windowstep+1)][,window.start := ((1:.N)-1)*windowstep, by = LGn]
+  pop_div_bin[,c("Fst.nSNPs","dxy.GR","dxy.GS","dxy.RS","dp.GR","pbs.r"):=.(numeric(.N),numeric(.N),numeric(.N),numeric(.N),numeric(.N),numeric(.N))]
+  # very slow solution,it will take ~ 20 min to calculate chr 1.
+  system.time( 
+  for(i in c(0,1)){
+    print(i)
+    total <- chr[LGn==i,chr_length]
+    if(total > windowsize){
+      for(j in pop_div_bin[LGn==i,window.start]){
+        pop_div_bin[LGn==i & window.start==j,c("Fst.nSNPs","dxy.GR","dxy.GS","dxy.RS","dp.GR","pbs.r"):=
+                              as.list(FstAll[LGn==i & Pos>window.start & Pos<=window.start+windowsize,c(.N, mean(dxy.GR,na.rm=T),mean(dxy.GS,na.rm=T),mean(dxy.RS,na.rm=T),mean(dp.GR,na.rm=T),mean(pbs.r,na.rm=T))])]
+      }
+    }
+  })
+  
+  # Ra calculation based on dxy, using the new formula in Mark's recent ms.
+  win_10k[,Ra.r := log((dxy.GR + dxy.RS)/(2*dxy.GS)) ]
+  #FstAll[,Ra.r.percentile:=ecdf(Ra.r)(Ra.r)]
+  
+
   # remove some columns, since FstAll takes too much RAM
   FstAll[,c(1,3:13):= NULL]
   
-  # add chi.square test result to each SNP
-  if(file.exists("chisq_test_all.csv")){
-    chisq_test_all<-fread("chisq_test_all.csv")
-    setkey(FstAll,LGn,Pos)
-    setkey(chisq_test_all,LGn,Pos)
-    FstAll<-FstAll[chisq_test_all]
-    rm(chisq_test_all)}
 
-
-  # Chi squre test for the top 5% pbs.r SNPs: Rob vs. Gos and Rob vs. Say
-  if(file.exists("pbs.r_top5.csv")){
-    pbs_r_top5<-fread("pbs.r_top5.csv")
-  }else{
-  chi_fun <- function(v1,v2,v3,v4,v5,v6){
-    #v1 is RobN_A, v2 is RobNreads
-    r1 <- chisq.test(as.table(rbind(c(v1,v2-v1),c(v3,v4-v3))))$p.value
-    r2 <- chisq.test(as.table(rbind(c(v1,v2-v1),c(v5,v6-v5))))$p.value
-    return(list(r1,r2))
-    }
-  
-  FstAll[PBS.percentile.unsmoothed > 0.95,c("chi_RG","chi_RS"):=chi_fun(RobN_A,RobNreads,GosN_A,GosNreads,SayN_A,SayNreads),by = seq_len(nrow(FstAll[PBS.percentile.unsmoothed > 0.95]))]
-  
-  # NA chi square test result indicate no difference AND both lakes in either allele have 0 counts
-  FstAll[is.na(chi_RG),chi_RG:=1]
-  FstAll[is.na(chi_RS),chi_RS:=1]
-  FstAll[,chiOK:= ifelse(chi_RG<0.05 & chi_RS<0.05, T, F)]
-  
-  pbs_r_top5<-FstAll[PBS.percentile.unsmoothed > 0.95,]
-  setorder(pbs_r_top5,-pbs.r)
-  fwrite(pbs_r_top5,"pbs.r_top5.csv")
-  }
-  #To chi-square test all SNPs:
-  #FstAll[RobNreads !=0 & GosNreads !=0 & SayNreads !=0,c("chi_RG","chi_RS"):=chi_fun(RobN_A,RobNreads,GosN_A,GosNreads,SayN_A,SayNreads),by = seq_len(nrow(FstAll[RobNreads !=0 & GosNreads !=0 & SayNreads !=0]))]
-  #fwrite(FstAll[,.(LG,LGn,Pos,SNP_window,Base_A,Base_a,GosN_A,GosNreads,RobN_A,RobNreads,SayN_A,SayNreads,chi_RG,chi_RS,chiOK)],"chisq_test_all.csv")
-  
 ############ Smoothing ################  
 # Smoothed Fst and PBS
 rm(list=setdiff(ls(), "FstAll"))
@@ -157,7 +190,15 @@ windowsize <- 5000
 FstAll[,SNP_window:= ((Pos-1)%/%windowsize+1)*windowsize]
 
 # Smooth SNPs, only use the SNPs, which as reads number satisfy conditions
-temp_BinSNPs<-FstAll[NreadsOK==T&chiOK==T,.("PBS.nSNPs" = .N,"PBS.r" = mean(pbs.r)),by=.(LGn, SNP_window)]
+temp_BinSNPs<-FstAll[,.("PBS.nSNPs" = .N,
+                        "PBS.r" = mean(pbs.r,na.rm=T), 
+                        "dxy.GR"= mean(dxy.GR,na.rm=T),
+                        "dxy.GS"= mean(dxy.GS,na.rm=T),
+                        "dxy.RS"= mean(dxy.RS,na.rm=T),
+                        "dp.GR"= mean(dp.GR,na.rm=T)),
+                     by=.(LGn, SNP_window)]
+
+temp_BinSNPs[,Ra.r := log((dxy.GR + dxy.RS)/(2*dxy.GS)) ]
 
 # Create a data.table with the full length of genome for temp_BinSNPs to join in.
 # I should not use chr length from the table "Stickle_chr_lengths.txt", as it truncates a lot of sequenced chromosomes and lost SNPs.
@@ -191,7 +232,6 @@ TajD_r[substr(LG, 1, 2) == "MT", LGn := 0]
 TajD_r[substr(LG, 1, 2) == "gr", LGn := as.numeric(as.roman(substr(LG, 6, nchar(LG))))]
 TajD_r[substr(LG, 1, 2) == "sc", LGn := as.numeric(substr(LG, 10, nchar(LG)))]
 TajD_r<-TajD_r[,D.r := as.numeric(D.r)]
-TajD_r[,D.percentile.score:=ecdf(D.r)(D.r)]
 #TajD_r<-TajD_r[!is.na(D.r)]
 setorder(TajD_r, LGn,Pos)
 
@@ -214,13 +254,9 @@ Pi_r[substr(LG, 1, 2) == "MT", LGn := 0]
 Pi_r[substr(LG, 1, 2) == "gr", LGn := as.numeric(as.roman(substr(LG, 6, nchar(LG))))]
 Pi_r[substr(LG, 1, 2) == "sc", LGn := as.numeric(substr(LG, 10, nchar(LG)))]
 Pi_r<-Pi_r[,Pi.r := as.numeric(Pi.r)]
-Pi_r[,Pi.percentile.score:=ecdf(Pi.r)(Pi.r)]
 #Pi_r<-Pi_r[!is.na(Pi.r)]
-setorder(Pi_r, LGn,Pos)
-
 
 setkey(Pi_r, LGn, Pos)
-setkey(TajD_PBS, LGn, Pos)
 
 # if bins are not greater than 2500
 if (windowsize>2500){
@@ -275,29 +311,42 @@ fst.plot(fst.dat = PBS_binned_df ,scaffold.widths=chr[,.(LGn,chr_length)],scaffs
 
 # Dan's plot function from file Graphics function.R
 {
-  plotgene <- function(dat, focalLG, specifybps = F, minpos, maxpos, Genestart, Geneend, Genename, popstoplot = c("R", "G", "M")){
-  dat[,pos.tr:=Pos/1000000]
-  npops <- length(popstoplot)
+  plotgene <- function(dat, focalLG, specifybps = F, minpos, maxpos, Genestart, Geneend, Genename, statstoplot){
+  npops <- length(statstoplot)
   par(mfrow = c(npops,1),mar = c(1.5,4,0.5,0.5), mgp = c(2, 0.75, 0), oma = c(3,0,2,0))
   if(specifybps == F){
     minpos <- 0
     maxpos <- dat[LGn==focalLG,max(Pos)]
   }
-  ymin <- dat[LGn==focalLG,min(pbs.r,na.rm=T)]
-  ymax <- dat[LGn==focalLG,max(pbs.r,na.rm=T)*1.2]
   options(scipen=5)
-  if("R" %in% popstoplot) {
-    plot(pbs.r~pos.tr,dat[LGn %in% c(focalLG) & Pos > minpos & Pos < maxpos,], pch = 16, cex = 0.6, axes = T, xlab = "", ylab = "PBS ROB", col = "darkgreen", ylim = c(ymin,ymax))
-    smoothingSpline = smooth.spline(dat[LGn %in% c(focalLG) & Pos > minpos & Pos < maxpos & !is.na(pbs.r),.(pbs.r,pos.tr)])
-    lines(smoothingSpline,col='red')
-    #rect(Genestart/1000000, 0,  Geneend/1000000,ymax, border = rgb(1,0,0,0.5) , lwd = 2, col = rgb(1,0,0,0.5))
+  col<-c("darkblue","darkred","darkgreen","darkorange","darkmagenta")
+  for(i in 1:length(statstoplot)){
+    
+    plot(dat[LGn %in% c(focalLG) & Pos > minpos & Pos < maxpos,.(Pos/1000000,eval(parse(text = statstoplot[i])))], pch = 16, cex = 0.6, axes = T, xlab = paste("Chromosome",focalLG), ylab = statstoplot[i],col=col[i])
+    abline(v=dat[LGn %in% c(focalLG) & Pos > minpos & Pos < maxpos & eval(parse(text = paste(statstoplot[i],".focal",sep=""))),Pos/1000000],col=rgb(red=0,green=0,blue=0,alpha=100,maxColorValue = 255))
   }
-  #text(Genestart/1000000+0.3, 0.9*ymax, Genename)
-  #mtext("Position on LG (mb)", side = 1,  outer = T , line = 1)
-  #mtext(paste("LG", focalLG), side = 3,  outer = T )
-}
+  mtext(paste("Chromosome",focalLG),side=1,line=1, outer = TRUE)
+  }
+PBS.r.cutoff <- quantile(Pi_TajD_PBS[,PBS.r],0.95,na.rm=T)
+Pi_TajD_PBS[,PBS.r.focal:= ifelse(PBS.r> PBS.r.cutoff, T, F)]
 
-plotgene(PBS_binned,focalLG=1, specifybps = F, minpos, maxpos, Genestart=10000000, Geneend=20000000, Genename="123", popstoplot = c("R"))
+dp.GR.cutoff <- quantile(Pi_TajD_PBS[,dp.GR],0.95,na.rm=T)
+Pi_TajD_PBS[,dp.GR.focal:= ifelse(dp.GR> dp.GR.cutoff, T, F)]
+
+Ra.r.cutoff <- quantile(Pi_TajD_PBS[,Ra.r],0.95,na.rm=T)
+Pi_TajD_PBS[,Ra.r.focal:= ifelse(Ra.r> Ra.r.cutoff, T, F)]
+
+D.r.cutoff <- quantile(Pi_TajD_PBS[,D.r],0.05,na.rm=T)
+Pi_TajD_PBS[,D.r.focal:= ifelse(D.r< D.r.cutoff, T, F)]
+
+Pi.r.cutoff <- quantile(Pi_TajD_PBS[,Pi.r],0.05,na.rm=T)
+Pi_TajD_PBS[,Pi.r.focal:= ifelse(Pi.r< Pi.r.cutoff, T, F)]
+
+for (chromosome in 1:21) {
+  png(filename=sprintf("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Results/Foen/chr%s.pop.divergence.png", chromosome),width = 3000, height = 2000,res=300)
+  plotgene(Pi_TajD_PBS,focalLG=chromosome, specifybps = F, minpos, maxpos, statstoplot = c("PBS.r", "dp.GR", "Ra.r","D.r","Pi.r"))
+  dev.off()
+  } 
 }
 #################################################################
 #  6.  Zoomed-in on sites of interest
