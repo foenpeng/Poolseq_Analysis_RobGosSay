@@ -200,6 +200,9 @@ temp_BinSNPs<-FstAll[,.("PBS.nSNPs" = .N,
 
 temp_BinSNPs[,Ra.r := log((dxy.GR + dxy.RS)/(2*dxy.GS)) ]
 
+# calculate percentiles, treat all NAs as 50%
+temp_BinSNPs[,PBS.r.percentile:=ecdf(PBS.r)(PBS.r)]
+
 # Create a data.table with the full length of genome for temp_BinSNPs to join in.
 # I should not use chr length from the table "Stickle_chr_lengths.txt", as it truncates a lot of sequenced chromosomes and lost SNPs.
 chr <- FstAll[, .(chr_length = max(Pos)), by = LGn]
