@@ -33,19 +33,18 @@ library(data.table)
 
 # Load data
 
-# It needs to go two directoray above the current working directory to find data
-setwd(paste(dirname(dirname(getwd())),"/Data",sep=""))
-
+#setwd("/Users/pengfoen/OneDrive - University of Connecticut/Analyses_QTL")
+setwd("D:/Foen Peng/OneDrive - University of Connecticut/Analyses_Poolseq")
 # These Fst values are corrected versions using "New_fst_GosRobSay_pools.R"
 
 ### Load Fst data
 {
-  RobSayFst <- fread("./allele_freq_Fst/RobSayFst_poolfstat.csv", header = F, sep = "\t", nrows = 6637336)
-  GosRobFst <- fread("./allele_freq_Fst/GosRobFst_poolfstat.csv", header = F, sep = "\t", nrows = 6637336)
-  GosSayFst <- fread("./allele_freq_Fst/GosSayFst_poolfstat.csv", header = F, sep = "\t", nrows = 6637336)
-  GosSNPstats <- fread("./allele_freq_Fst/NewGosSNP_Stats.csv", header = T, nrows = 6637336)
-  RobSNPstats <- fread("./allele_freq_Fst/NewRobSNP_Stats.csv", header = T, nrows = 6637336)
-  SaySNPstats <- fread("./allele_freq_Fst/NewSaySNP_Stats.csv", header = T, nrows = 6637336)
+  RobSayFst <- fread("./Data/allele_freq_Fst/RobSayFst_poolfstat.csv", header = F, sep = "\t", nrows = 6637336)
+  GosRobFst <- fread("./Data/allele_freq_Fst/GosRobFst_poolfstat.csv", header = F, sep = "\t", nrows = 6637336)
+  GosSayFst <- fread("./Data/allele_freq_Fst/GosSayFst_poolfstat.csv", header = F, sep = "\t", nrows = 6637336)
+  GosSNPstats <- fread("./Data/allele_freq_Fst/NewGosSNP_Stats.csv", header = T, nrows = 6637336)
+  RobSNPstats <- fread("./Data/allele_freq_Fst/NewRobSNP_Stats.csv", header = T, nrows = 6637336)
+  SaySNPstats <- fread("./Data/allele_freq_Fst/NewSaySNP_Stats.csv", header = T, nrows = 6637336)
   SaySNPstats <- SaySNPstats[,-1]
 }
 
@@ -142,7 +141,7 @@ setwd(paste(dirname(dirname(getwd())),"/Data",sep=""))
 #################################################################
 {
   #####  Load Tajima's D 
-  TajD_r_filelist = list.files(path = "./TajD/subsample50x_mincount2_finished", pattern="Rob.Q15", full.names = T) 
+  TajD_r_filelist = list.files(path = "./Data/TajD/subsample50x_mincount2_finished", pattern="Rob.Q15", full.names = T) 
   TajD_r <- do.call(rbind,lapply(TajD_r_filelist,function(i){fread(i, sep = "\t", header = F)}))
   colnames(TajD_r) <- c("LG", "Pos", "D.nSNPs", "x.r", "D.r")
   
@@ -154,7 +153,7 @@ setwd(paste(dirname(dirname(getwd())),"/Data",sep=""))
   setorder(TajD_r, LGn,Pos)
   
   ###### Load Pi
-  Pi_r_filelist = list.files(path = "./per_chromosom_pi", pattern="Rob.Q15", full.names = T) 
+  Pi_r_filelist = list.files(path = "./Data/per_chromosom_pi", pattern="Rob.Q15", full.names = T) 
   Pi_r <- do.call(rbind,lapply(Pi_r_filelist,function(i){fread(i, sep = "\t", header = F)}))
   colnames(Pi_r) <- c("LG", "Pos", "Pi.nSNPs", "x.r", "Pi.r")
   
@@ -256,7 +255,7 @@ setwd(paste(dirname(dirname(getwd())),"/Data",sep=""))
   
 ##### Load gene information
 {
-  gene_dir <- paste(dirname(dirname(getwd())),"/Analysis_Expression/Data files RAW",sep='')
+  gene_dir <- paste(dirname(getwd()),"/Analysis_Expression/Data files RAW",sep='')
   gene_loc<-unique(fread(paste(gene_dir,"/GeneLocations.csv",sep="")))
   gene_name<-fread(paste(gene_dir,"/GeneID_to_GeneName.csv",sep=""))
   gene_LG<-fread(paste(gene_dir,"/GeneID to LinkageGroup.csv",sep=""),header = TRUE)
@@ -282,9 +281,9 @@ setwd(paste(dirname(dirname(getwd())),"/Data",sep=""))
   
 ##### calculate statistics for every gene
 {
-  FstAll_gene<-FstAll[gene_info, 
+  PBS_gene<-FstAll[gene_info, 
          on = c("Pos>=start","Pos<=stop","LGn"), 
-         nomatch = 0, 
+         nomatch = NA, 
          allow.cartesian = TRUE][, .(start = Pos[1],
                                      stop = Pos.1[1],
                                      gene.name = gene.name[1],
@@ -297,8 +296,22 @@ setwd(paste(dirname(dirname(getwd())),"/Data",sep=""))
                                      dxy.GS= mean(dxy.GS,na.rm=T),
                                      dxy.RS= mean(dxy.RS,na.rm=T)),
                                  keyby = .(LGn,GeneID)]
-  FstAll_gene[,Ra.r := log((dxy.GR + dxy.RS)/(2*dxy.GS)) ]
-  fwrite(FstAll_gene, "Pi_TajD_PBS_gene.csv")
+  PBS_gene[,Ra.r := log((dxy.GR + dxy.RS)/(2*dxy.GS)) ]
+  
+  D_gene<-TajD_r[gene_info,
+                     on = c("Pos>=start","Pos<=stop","LGn"), 
+                     allow.cartesian = TRUE][,.(D.r = mean(D.r,na.rm=T)),
+                                             keyby = .(LGn,GeneID)]
+  Pi_gene<-Pi_r[gene_info,
+                on = c("Pos>=start","Pos<=stop","LGn"), 
+                allow.cartesian = TRUE][,.(Pi.r = mean(Pi.r,na.rm=T)),
+                                        keyby = .(LGn,GeneID)]
+  Pi_TajD_PBS_gene<-PBS_gene[D_gene][Pi_gene][,c(11:13):=NULL]
+  ecdf_fun <- function(x) ecdf(x)(x)
+  Pi_TajD_PBS_gene[,c("pbs.r.perc","pbs.g.perc","dp.GR.perc","Ra.r.perc","D.r.perc","Pi.r.perc") := lapply(.SD, ecdf_fun), .SDcols = 8:13]
+
+  
+  fwrite(Pi_TajD_PBS_gene, "./Results/Foen/Pi_TajD_PBS_gene.csv")
 }
 #################################################################
 #  7.  Plotting results
