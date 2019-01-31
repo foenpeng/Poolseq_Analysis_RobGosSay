@@ -53,7 +53,7 @@
         plot(dat[,.(((start+stop)/2),get(var_plot))], pch=gene_pch, cex = 0.6, axes = T, xlim=c(data_qtl[1,qtl_start], data_qtl[1,qtl_end]), xlab = NULL, ylab = var_plot, col=col[i])
         abline(h=var_95, lty=5, col='black')
         if(dat[pbs.focal.gene==TRUE,.N]>0){
-          text(dat[pbs.focal.gene==TRUE,.(((start+stop)/2),get(var_plot))], labels = dat[pbs.focal.gene==TRUE,gene.name],cex=0.7, pos=2)
+          text(dat[pbs.focal.gene==TRUE,.(((start+stop)/2),get(var_plot))], labels = dat[pbs.focal.gene==TRUE,paste(substr(GeneID,14,nchar(GeneID)),gene.name)],cex=0.7, pos=2)
           rect(gene_focal_merge[,start], 0,  gene_focal_merge[,end],5, border = rgb(1,0,0,0) , lwd = 1, col = rgb(1,0,0,0.4))}
       }
     }
@@ -66,8 +66,8 @@
   statstoplot=c("pbs.r","dp.GR")
   stats95=do.call(rbind,lapply(focal_qtl_gene[,statstoplot,with=FALSE],quantile,probs=0.95,na.rm=TRUE))
   plot.qtl(focal_qtl_gene,focal_qtl[1], statstoplot,stats95)
-  
-  for (j in 1:focal_qtl[,.N]) {
+  focal_qtl_plot<-focal_qtl[name=="QTL_fibrosis"& LGn==2,]
+  for (j in 1:focal_qtl_plot[,.N]) {
     #png(filename=sprintf("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Results/Foen/chr%s.pop.divergence.png", chromosome),width = 3000, height = 2000,res=300)
     #dev.off()
     plot.qtl(focal_qtl_gene,focal_qtl[j], statstoplot,stats95)
