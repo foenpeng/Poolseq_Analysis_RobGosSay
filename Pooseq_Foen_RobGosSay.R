@@ -133,6 +133,11 @@ setwd("D:/Foen Peng/OneDrive - University of Connecticut/Analyses_Poolseq")
   # clean some table and columns
   FstAll[,c(1,3:13,24):= NULL]
   rm(list=setdiff(ls(), "FstAll"))
+  
+  # save a copy of SNP information
+  #FstSave<-FstAll[NreadsOK == T,]
+  #fwrite(FstSave,"popgen_info_filter_seq_depth.csv")
+  
 }  
 
 
