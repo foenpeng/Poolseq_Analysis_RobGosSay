@@ -16,7 +16,7 @@
   Pi_TajD_PBS_gene<-fread("./Analyses_Poolseq/Results/Foen/Pi_TajD_PBS_gene.csv")
   focal_qtl_snp<-fread("./Analyses_QTL/result/Foen/QTL_AllTraits_snp_focal.csv")
   focal_qtl<-na.omit(focal_qtl_snp[,.(qtl.focal.region.end=qtl.focal.region.end[1]),by=c("qtl.trait","LGn","qtl.focal.region.start")])
-  
+  qtl_traits <- sort(unique(focal_qtl$qtl.trait))
   popgen_all<-fread("./Analyses_Poolseq/popgen_info_filter_seq_depth.csv",header = T)
 
   
@@ -38,18 +38,17 @@
                             nomatch = 0L,
                             on = c("qtl_join_start<=gene_join_start","qtl_join_end>=gene_join_end","LGn"),
                             allow.cartesian = TRUE]
-  focal_qtl_gene[,pbs.focal.gene := FALSE]
-  focal_qtl_gene[pbs.r.perc>0.95 & dp.GR.perc>0.95,pbs.focal.gene := TRUE]
-  focal_qtl_gene_significant<-focal_qtl_gene[pbs.focal.gene ==TRUE,.SD,by=c("qtl.trait","LGn","GeneID")]
+  focal_qtl_gene[,avg.sig.gene := FALSE]
+  focal_qtl_gene[pbs.r.perc>0.95 & dp.GR.perc>0.95,avg.sig.gene := TRUE]
+  focal_qtl_gene_significant<-focal_qtl_gene[avg.sig.gene ==TRUE,.SD,by=c("qtl.trait","LGn","GeneID")]
 }  
 
 ##### Save a copy of significant genes without duplicates
 {
-  qtl_traits <- sort(unique(focal_qtl$qtl.trait))
   focal_qtl_gene_significant[,paste0("In.", qtl_traits):=lapply(qtl_traits, function(i) as.integer(qtl.trait==i))]
   focal_qtl_gene_significant[,(26:31):=lapply(.SD, sum),.SDcols=26:31, by=GeneID]
   focal_qtl_gene_significant<-unique(focal_qtl_gene_significant, by="GeneID")
-  focal_qtl_gene_significant[,c("qtl.trait","qtl.focal.region.start","qtl.focal.region.end","qtl_join_start","qtl_join_end","pbs.focal.gene"):=NULL]
+  focal_qtl_gene_significant[,c("qtl.trait","qtl.focal.region.start","qtl.focal.region.end","qtl_join_start","qtl_join_end","avg.sig.gene"):=NULL]
 
   fwrite(focal_qtl_gene_significant,"./Analyses_Combined/results/Foen/focal_qtl_gene_significant.csv")
 }
@@ -58,12 +57,26 @@
 {
   # filter at 95% quantile
   popgen_filter<-popgen_all[chiOK==TRUE & pbs.r>1.4358 & dp.GR > 0.828,]
+  rm(popgen_all)
   
   popgen_filter[,Pos.join:=Pos]
   focal_popgen_filter<-focal_qtl[popgen_filter,
                              nomatch=0L,
                              on = c("qtl_join_start<=Pos.join","qtl_join_end>=Pos.join","LGn"),
                              allow.cartesian=TRUE]
+  # join the pogen info into gene info
+  setnames(focal_qtl_gene,c("qtl_join_start","qtl_join_end"),c("gene_join_start","gene_join_end"))
+  focal_popgen_filter[,Pos.join:=Pos]
+  focal_popgen_filter_plot<-focal_qtl_gene[focal_popgen_filter,
+                                       nomatch=NA,
+                                       on = c("gene_join_start<=Pos.join","gene_join_end>=Pos.join","LGn","qtl.trait"),
+                                       allow.cartesian=TRUE][,.(qtl.trait,i.qtl.focal.region.start,i.qtl.focal.region.end,
+                                                                GeneID,gene.name,start,stop,gene.length,
+                                                                i.pbs.r,i.pbs.g,i.dp.GR),by=.(LGn,Pos)]
+  setnames(focal_popgen_filter_plot,c("i.qtl.focal.region.start","i.qtl.focal.region.end"),c("qtl.focal.region.start","qtl.focal.region.end"))
+  focal_popgen_filter_plot[,snp.sig:=FALSE]
+  focal_popgen_filter_plot[i.dp.GR>0.95&i.pbs.g<1,snp.sig:=TRUE]
+  
 }
 
 ##### Generat a table of the highest value SNPs mapping to gene
@@ -101,21 +114,20 @@
     col<-c("darkblue","darkred","darkgreen","darkorange","darkmagenta")
     gene_buffer<-1e4
     dat<-data_gene[LGn==data_qtl[,LGn] & qtl.trait==data_qtl[,qtl.trait] & qtl.focal.region.start==data_qtl[,qtl.focal.region.start],]
-    gene_focal_merge<-dat[pbs.focal.gene==TRUE, as.data.table(reduce(IRanges(start-gene_buffer,stop+gene_buffer),min.gapwidth = 0L)),by = LGn]
-    gene_pch <- ifelse(dat[,pbs.focal.gene], 16, 1)
-    gene_cex<- ifelse(dat[,pbs.focal.gene], 1.2, 0.5)
+    avg.sig.gene.merge<-dat[avg.sig.gene==TRUE, as.data.table(reduce(IRanges(start-gene_buffer,stop+gene_buffer),min.gapwidth = 0L)),by = LGn]
+    gene_pch <- ifelse(dat[,avg.sig.gene], 16, 1)
+    gene_cex<- ifelse(dat[,avg.sig.gene], 1.2, 0.5)
     
     qtl_snp_plot<-data_qtl[data_qtl_snp,.(qtl.focal.region.start, qtl.focal.region.end, Pos, abs_Z, snp.id, sig),
                            on=c("qtl.trait","LGn","qtl.focal.region.start"),nomatch=0L]
-    setkey(qtl_snp_plot,Pos)
-    popgen_snp_plot<-data_qtl[data_popgen,.(qtl.focal.region.start, qtl.focal.region.end, Pos, pbs.r,pbs.g,dp.GR),
-                              on=c("qtl.trait","LGn","qtl.focal.region.start"),nomatch=0L]
-    
-    #cols_to_divide<-c("qtl.focal.region.start", "qtl.focal.region.end", "Pos")
-    #qtl_snp_plot[,(cols_to_divide):=lapply(.SD,function(x) x/(1e6)),.SDcols = cols_to_divide ]
     qtl_snp_pch<-ifelse(qtl_snp_plot[,sig], 16, 1)
     qtl_snp_cex<-ifelse(qtl_snp_plot[,sig], 1.2, 0.5)
-    popgen_snp_pch<-ifelse(popgen_snp_plot[,dp.GR>0.95&pbs.g<1],16,1)
+    setkey(qtl_snp_plot,Pos)
+    
+    popgen_snp_plot<-data_qtl[data_popgen,on=c("qtl.trait","LGn","qtl.focal.region.start"),nomatch=0L]
+    popgen_label<-popgen_snp_plot[snp.sig==TRUE & is.na(GeneID)==FALSE,.SD[which.max(i.pbs.r)], by=GeneID]
+    snp.sig.gene.merge<-popgen_snp_plot[snp.sig==TRUE & is.na(GeneID)==FALSE, as.data.table(reduce(IRanges(start-gene_buffer,stop+gene_buffer),min.gapwidth = 0L)),by = LGn]
+    popgen_snp_pch<-ifelse(popgen_snp_plot[,snp.sig],16,1)
     
     for(i in 1:length(statstoplot)){
       var_plot<-statstoplot[i]
@@ -125,16 +137,19 @@
         abline(h=qtl_sig_level[qtl.trait==data_qtl[,qtl.trait],sig_Z], lty=5, col='black')
         axis(2)
       }else if(var_plot == "snp_pbs.r"){
-        plot(popgen_snp_plot[,.(Pos,pbs.r)],axes=F,pch=popgen_snp_pch, cex=1, xlim=c(data_qtl[1,qtl.focal.region.start], data_qtl[1,qtl.focal.region.end]), xlab = NULL, ylab = var_plot, col=col[i])
+        plot(popgen_snp_plot[,.(Pos,i.pbs.r)],axes=F,pch=popgen_snp_pch, cex=1, xlim=c(data_qtl[1,qtl.focal.region.start], data_qtl[1,qtl.focal.region.end]), xlab = NULL, ylab = var_plot, col=col[i])
+        text(popgen_label[,.(Pos,i.pbs.r)], labels = popgen_label[,paste(substr(GeneID,14,nchar(GeneID)),gene.name)],cex=1, pos=2)
+        rect(snp.sig.gene.merge[,start], 0,  snp.sig.gene.merge[,end],5, border = rgb(1,0,0,0) , lwd = 1, col = rgb(1,0,0,0.4))
         axis(2)
-        }else{
+      }else{
         var_95<-stats95[,get(var_plot)]
         plot(dat[,.(((start+stop)/2),get(var_plot))], pch=gene_pch, cex = gene_cex, axes = F, xlim=c(data_qtl[1,qtl.focal.region.start], data_qtl[1,qtl.focal.region.end]), xlab = NULL, ylab = paste0("gene_",var_plot), col=col[i])
         abline(h=var_95, lty=5, col='black')
         axis(2)
-        if(dat[pbs.focal.gene==TRUE,.N]>0){
-          text(dat[pbs.focal.gene==TRUE,.(((start+stop)/2),get(var_plot))], labels = dat[pbs.focal.gene==TRUE,paste(substr(GeneID,14,nchar(GeneID)),gene.name)],cex=1, pos=2)
-          rect(gene_focal_merge[,start], 0,  gene_focal_merge[,end],5, border = rgb(1,0,0,0) , lwd = 1, col = rgb(1,0,0,0.4))}
+        if(dat[avg.sig.gene==TRUE,.N]>0){
+          text(dat[avg.sig.gene==TRUE,.(((start+stop)/2),get(var_plot))], labels = dat[avg.sig.gene==TRUE,paste(substr(GeneID,14,nchar(GeneID)),gene.name)],cex=1, pos=2)
+          rect(avg.sig.gene.merge[,start], 0,  avg.sig.gene.merge[,end],5, border = rgb(1,0,0,0) , lwd = 1, col = rgb(1,0,0,0.4))
+          }
       }
       ticks<-seq(0,4e7,1e6)
       axis(1, at=ticks, labels = ticks/1e6)
@@ -152,14 +167,26 @@
   qtl_sig_level<-focal_qtl_snp[sig==FALSE,.(sig_Z=max(abs_Z)),by=qtl.trait]
    
   # to plot single graph 
-  plot.qtl(focal_qtl_gene,focal_qtl[1],focal_qtl_snp, focal_popgen_filter, c("qtl","snp_pbs.r",gene_statstoplot),gene_stats95,qtl_sig_level)
+  plot.qtl(data_gene=focal_qtl_gene, 
+           data_qtl=focal_qtl[1], 
+           data_qtl_snp=focal_qtl_snp,
+           data_popgen=focal_popgen_filter_plot, 
+           statstoplot=c("qtl","snp_pbs.r",gene_statstoplot), 
+           stats95=gene_stats95,
+           qtl_sig_level=qtl_sig_level)
   
   #focal_qtl_plot<-focal_qtl[qtl.trait=="MaxWormMass",]
   focal_qtl_plot<-focal_qtl
   for (j in 1:focal_qtl_plot[,.N]) {
     #png(filename=sprintf("./Analyses_Combined/results/Foen/%s_LG%s_Start%s.png", focal_qtl_plot[j,qtl.trait],focal_qtl_plot[j,LGn], focal_qtl_plot[j,qtl.focal.region.start]),
     #width = 5000, height = 3000,res=500)
-    plot.qtl(focal_qtl_gene,focal_qtl_plot[j],focal_qtl_snp, focal_popgen_filter, c("qtl","snp_pbs.r",gene_statstoplot),gene_stats95,qtl_sig_level)
+    plot.qtl(data_gene=focal_qtl_gene, 
+             data_qtl=focal_qtl[j], 
+             data_qtl_snp=focal_qtl_snp,
+             data_popgen=focal_popgen_filter_plot, 
+             statstoplot=c("qtl","snp_pbs.r",gene_statstoplot), 
+             stats95=gene_stats95,
+             qtl_sig_level=qtl_sig_level)
     #dev.off()
   } 
 }
