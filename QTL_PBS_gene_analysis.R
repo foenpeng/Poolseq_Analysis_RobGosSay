@@ -114,6 +114,7 @@
   fwrite(focal_popgen_Snp_map_to_gene_dpGR95_grouped,"./Analyses_Combined/results/Foen/focal_popgen_Snp_map_to_gene_dpGR95_grouped.csv")
   
   overlap_twolist<-focal_popgen_Snp_map_to_gene_dpGR95_grouped[focal_qtl_gene_significant,on="GeneID",nomatch=0L]
+  fwrite(overlap_twolist,"./Analyses_Combined/results/Foen/overlap_between_avg_and_ind_genelist.csv" )
   setkey(focal_popgen_Snp_map_to_gene_dpGR95_grouped,GeneID)
   setkey(focal_qtl_gene_significant,GeneID)
   all_sig_gene<-merge(focal_popgen_Snp_map_to_gene_dpGR95_grouped,focal_qtl_gene_significant,all=TRUE)
