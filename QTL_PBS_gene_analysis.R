@@ -9,6 +9,14 @@
 #################################################################
 #  2.  Load data
 #################################################################
+
+## function to convert linkage group names from string to numeric number
+  convert_LG_name<-function(dataset, LG_column){
+    dataset[substr(get(LG_column), 1, 2) == "MT", LGn := 0]
+    dataset[substr(get(LG_column), 1, 2) == "gr", LGn := as.numeric(as.roman(substr(LG, 6, nchar(LG))))]
+    dataset[substr(get(LG_column), 1, 2) == "sc", LGn := as.numeric(substr(LG, 10, nchar(LG)))]
+  }
+
 {
   rm(list=ls())
   setwd("D:/Foen Peng/OneDrive - University of Connecticut/")
@@ -17,6 +25,22 @@
   focal_qtl_snp<-fread("./Analyses_QTL/result/Foen/QTL_AllTraits_snp_focal.csv")
   focal_qtl<-na.omit(focal_qtl_snp[,.(qtl.focal.region.end=qtl.focal.region.end[1]),by=c("qtl.trait","LGn","qtl.focal.region.start")])
   qtl_traits <- sort(unique(focal_qtl$qtl.trait))
+  
+  # inport the expression data
+  expr_pop<-fread("./Analysis_Expression/Tables of results/Front Immunol LM Results Population.csv",select=1:8)
+  expr_pop[,source:="pop"]
+  expr_int<-fread("./Analysis_Expression/Tables of results/Front Immunol LM Results Interaction.csv",select=1:8)
+  expr_int[,source:="int"]
+  expr_infection<-fread("./Analysis_Expression/Tables of results/Front Immunol LM Results Infection.csv",select=1:8)
+  expr_infection[,source:="infect"]
+  expr<-merge(expr_pop,expr_int, all=TRUE)
+  expr<-merge(expr,expr_infection,all=TRUE)
+  
+  # import the GWAS data
+  GWAS_filelist = list.files(path = "./Analyses_GWAS/Genome_scans_summary/tabs", full.names = T) 
+  GWAS <- do.call(rbind,lapply(GWAS_filelist,function(i)  {cbind(fread(i,header=T, col.names = c("LG","Pos","Start","End")), name=strsplit(basename(i),"Spreadsheet")[[1]][1])})) 
+  GWAS <- na.omit(GWAS, cols="Pos")
+  GWAS <- convert_LG_name(GWAS, "LG")
   
   # read popgen files, which is very large
   if(file.exists("./Analyses_Poolseq/popgen_info_filter_seq_depth_chi_pbs.csv")){
@@ -102,8 +126,8 @@
                                             GosFreqA,RobFreqA,SayFreqA,i.Base_A,i.GosN_A,i.GosNreads,i.RobN_A,i.RobNreads,i.SayN_A,i.SayNreads,i.pbs.r,i.pbs.g,i.dp.GR,
                                             In.Fibrosis,In.FibrosisORGranuloma,In.Granuloma,In.MaxWormMass,In.ROSresid,In.WormPresent),by=.(LGn,GeneID,Pos)]
   focal_popgen_Snp_map_to_gene_dpGR95<-focal_popgen_Snp_map_to_gene[i.dp.GR>0.95 & i.pbs.g<1]
-  fwrite(focal_popgen_Snp_map_to_gene,"./Analyses_Combined/results/Foen/focal_popgen_Snp_map_to_gene.csv")
-  fwrite(focal_popgen_Snp_map_to_gene[i.dp.GR>0.95 & i.pbs.g<1],"./Analyses_Combined/results/Foen/focal_popgen_Snp_map_to_gene_dpGR95.csv")
+  #fwrite(focal_popgen_Snp_map_to_gene,"./Analyses_Combined/results/Foen/focal_popgen_Snp_map_to_gene.csv")
+  #fwrite(focal_popgen_Snp_map_to_gene[i.dp.GR>0.95 & i.pbs.g<1],"./Analyses_Combined/results/Foen/focal_popgen_Snp_map_to_gene_dpGR95.csv")
 }
 
 ##### Look for overlaps between gene level average candidates and snp level candidates
@@ -111,17 +135,36 @@
   focal_popgen_Snp_map_to_gene_dpGR95_grouped<-focal_popgen_Snp_map_to_gene_dpGR95[,.(start=start[1],stop=stop[1],gene.name=gene.name[1],gene.length=gene.length[1],snp.count=snp.count[1],pbs.r.perc=pbs.r.perc[1],pbs.g.perc=pbs.g.perc[1],dp.GR.perc=dp.GR.perc[1],
                                                                                       In.Fibrosis=In.Fibrosis[1],In.FibrosisORGranuloma=In.FibrosisORGranuloma[1],In.Granuloma=In.Granuloma[1],In.MaxWormMass=In.MaxWormMass[1],In.ROSresid=In.ROSresid[1],In.WormPresent=In.WormPresent[1],
                                                                                       sig.snp.count=.N), by=.(LGn,GeneID)]
-  fwrite(focal_popgen_Snp_map_to_gene_dpGR95_grouped,"./Analyses_Combined/results/Foen/focal_popgen_Snp_map_to_gene_dpGR95_grouped.csv")
+  #fwrite(focal_popgen_Snp_map_to_gene_dpGR95_grouped,"./Analyses_Combined/results/Foen/focal_popgen_Snp_map_to_gene_dpGR95_grouped.csv")
   
   overlap_twolist<-focal_popgen_Snp_map_to_gene_dpGR95_grouped[focal_qtl_gene_significant,on="GeneID",nomatch=0L]
-  fwrite(overlap_twolist,"./Analyses_Combined/results/Foen/overlap_between_avg_and_ind_genelist.csv" )
+  #fwrite(overlap_twolist,"./Analyses_Combined/results/Foen/overlap_between_avg_and_ind_genelist.csv" )
   setkey(focal_popgen_Snp_map_to_gene_dpGR95_grouped,GeneID)
   setkey(focal_qtl_gene_significant,GeneID)
   all_sig_gene<-merge(focal_popgen_Snp_map_to_gene_dpGR95_grouped,focal_qtl_gene_significant,all=TRUE)
 }
 
 #################################################################
-#  5.  Plot genomic map for each QTL
+#  5.  Combine QTL and Popgen results with GWAS and Expression
+#################################################################
+
+##### combine with expression
+{
+  qtl_popgen_expr<-expr[all_sig_gene,on="geneID==GeneID",nomatch=0L]
+  fwrite(qtl_popgen_expr,"./Analyses_Combined/results/Foen/qtl_popgen_expr_overlap.csv")
+} 
+  
+##### combine with GWAS
+{
+  setkey(GWAS, LGn, Start, End)
+  qtl_popgen_gwas<-foverlaps(all_sig_gene,GWAS, by.x = c("LGn","start","stop"), by.y = c("LGn","Start","End"),type="any",nomatch=0L)
+  qtl_popgen_gwas[,c(Start,End):=NULL]
+  fwrite(qtl_popgen_gwas,"./Analyses_Combined/results/Foen/qtl_popgen_gwas_overlap.csv")
+}
+
+
+#################################################################
+#  6.  Plot genomic map for each QTL
 #################################################################
 
 ##### Plot function
