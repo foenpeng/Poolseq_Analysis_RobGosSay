@@ -1,0 +1,90 @@
+#################################################################
+#  1.  Load packages
+#################################################################
+{
+  library(data.table)
+}
+
+#################################################################
+#  2.  Load data
+#################################################################
+rm(list=ls())
+
+## function to convert linkage group names from string to numeric number
+convert_LG_name<-function(dataset, LG_column){
+  dataset[substr(get(LG_column), 1, 2) == "MT", LGn := 0]
+  dataset[substr(get(LG_column), 1, 2) == "gr", LGn := as.numeric(as.roman(substr(get(LG_column), 6, nchar(get(LG_column)))))]
+  dataset[substr(get(LG_column), 1, 2) == "sc", LGn := as.numeric(substr(get(LG_column), 10, nchar(get(LG_column))))]
+}
+
+{
+  setwd("D:/Foen Peng/OneDrive - University of Connecticut/")
+  setwd("/Users/pengfoen/OneDrive - University of Connecticut/")
+  
+  gene_loc<-unique(fread("./Analysis_Expression/Data files RAW/GeneLocations.csv",sep=","))
+  gene_name<-fread("./Analysis_Expression/Data files RAW/GeneID_to_GeneName.csv")
+  gene_LG<-fread("./Analysis_Expression/Data files RAW/GeneID to LinkageGroup.csv",header = TRUE)
+  setnames(gene_name,c("Ensembl Gene ID","Associated Gene Name"),c("GeneID","gene.name"))
+  convert_LG_name(gene_LG, "LinkageGroup")
+  gene_LG[,GeneID:=V1]
+  
+  setkey(gene_loc,GeneID)
+  setkey(gene_LG, GeneID)
+  setkey(gene_name,GeneID)
+  
+  # merge three tables to gene_info
+  gene_info<-gene_LG[gene_loc]
+  gene_info<-gene_info[gene_name]
+  gene_info<-gene_info[,!c("V1", "LinkageGroup")]
+  setkey(gene_info,LGn,Start,Stop)
+  
+  # seperate the full length from the exons
+  gene_info[,full:=FALSE]
+  gene_info[,c("gene_start","gene_end"):=list(min(Start),max(Stop)),by=GeneID]
+  gene_info[Start==gene_start&Stop==gene_end,full:=TRUE]
+  gene_info[,c("gene_start","gene_end"):=NULL]
+  
+  popgen_all<-fread("./Analyses_Poolseq/popgen_info_filter_seq_depth.csv",header = T)
+  
+}
+
+#################################################################
+#  3.  plot gene
+#################################################################
+
+plot_gene <- function(dat, focalLG, specifybps = F, minpos, maxpos, gene.name, gene.id=gene.id, exon, statstoplot){
+  npops <- length(statstoplot)
+  par(mfrow = c(npops,1),mar = c(1.5,4,0.5,0.5), mgp = c(2, 0.75, 0), oma = c(3,0,2,0))
+
+  options(scipen=5)
+  col<-c("darkblue","darkred","darkgreen","darkorange","darkmagenta")
+  for(i in 1:length(statstoplot)){
+    if(statstoplot[i]=="dp.GR"){
+      y_lim=c(0,1)
+    }else{
+      y_lim=c(0,5)
+    }
+    
+    plot(dat[,.(Pos,eval(parse(text = statstoplot[i])))], pch = 16, cex = 1,type = 'o', axes = T, ylim=y_lim, ylab = statstoplot[i],col=col[i])
+    rect(exon[,Start], 0,  exon[,Stop],y_lim[2], border = rgb(1,0,0,0) , lwd = 1, col = rgb(1,0,0,0.1))
+    #abline(v=dat[LGn %in% c(focalLG) & Pos > minpos & Pos < maxpos & eval(parse(text = paste(statstoplot[i],".focal",sep=""))),((stop-start)/2)/1000000],col=rgb(red=0,green=0,blue=0,alpha=100,maxColorValue = 255))
+  }
+  mtext(paste("Candidate",gene.name,gene.id),side=1,line=1, outer = TRUE)
+}
+
+gene_to_plot<-c("ENSGACG00000015539","ENSGACG00000015530","ENSGACG00000017437")
+for (i in gene_to_plot) {
+  #png(filename=sprintf("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Results/Foen/chr%s.pop.divergence.png", chromosome),width = 3000, height = 2000,res=300)
+  gene_info_plot<-gene_info[GeneID==i,]
+  gene_start_plot<-gene_info_plot[full==TRUE,Start] -3000
+  gene_end_plot<-gene_info_plot[full==TRUE,Stop] + 3000
+  gene_name_plot<-gene_info_plot[full==TRUE,gene.name]
+  LGn_plot<-gene_info_plot[full==TRUE,LGn]
+  exon_plot<-gene_info_plot[full==FALSE,.(Start,Stop)]
+  SNP_plot<-popgen_all[LGn==LGn_plot & Pos >= gene_start_plot & Pos <= gene_end_plot,.SD,keyby=Pos]
+  plot_gene(SNP_plot,focalLG=LGn_plot, minpos=gene_start_plot, maxpos=gene_end_plot, gene.name=gene_name_plot,gene.id=i, exon=exon_plot,
+           statstoplot = c("dp.GR", "pbs.r","pbs.g"))
+  #dev.off()
+} 
+
+

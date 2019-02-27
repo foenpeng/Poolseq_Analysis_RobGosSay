@@ -9,6 +9,7 @@
 #################################################################
 #  2.  Load data
 #################################################################
+rm(list=ls())
 
 ## function to convert linkage group names from string to numeric number
   convert_LG_name<-function(dataset, LG_column){
@@ -18,13 +19,14 @@
   }
 
 {
-  rm(list=ls())
+
   setwd("D:/Foen Peng/OneDrive - University of Connecticut/")
   setwd("/Users/pengfoen/OneDrive - University of Connecticut/")
   Pi_TajD_PBS_gene<-fread("./Analyses_Poolseq/Results/Foen/Pi_TajD_PBS_gene.csv")
   focal_qtl_snp<-fread("./Analyses_QTL/result/Foen/QTL_AllTraits_snp_focal.csv")
   focal_qtl<-na.omit(focal_qtl_snp[,.(qtl.focal.region.end=qtl.focal.region.end[1]),by=c("qtl.trait","LGn","qtl.focal.region.start")])
   qtl_traits <- sort(unique(focal_qtl$qtl.trait))
+  manual_qtl_check<-fread("./Analyses_QTL/manual_qtl_check.csv")
   
   # inport the expression data
   expr_pop<-fread("./Analysis_Expression/Tables of results/Front Immunol LM Results Population.csv",select=1:8)
@@ -151,7 +153,8 @@
 ##### combine with expression
 {
   qtl_popgen_expr<-expr[all_sig_gene,on="geneID==GeneID",nomatch=0L]
-  fwrite(qtl_popgen_expr,"./Analyses_Combined/results/Foen/qtl_popgen_expr_overlap.csv")
+  #fwrite(qtl_popgen_expr,"./Analyses_Combined/results/Foen/qtl_popgen_expr_overlap.csv")
+  
 } 
   
 ##### combine with GWAS
@@ -162,7 +165,26 @@
   fwrite(qtl_popgen_gwas,"./Analyses_Combined/results/Foen/qtl_popgen_gwas_overlap.csv")
 }
 
-
+#### just check QTL with GWAS and expression
+{
+  qtl_expr_avg<-focal_qtl_gene[expr,on="GeneID==geneID",nomatch=0L]
+  qtl_expr_snp<-focal_popgen_Snp_map_to_gene[expr,on="GeneID==geneID",nomatch=0L]
+  qtl_expr_avg<-unique(qtl_expr_avg,by="GeneID")
+  qtl_expr_snp<-unique(qtl_expr_snp,by="GeneID")
+  qtl_expr<-merge(qtl_expr_avg,
+                  qtl_expr_snp[,.(start=start[1],stop=stop[1],gene.name=gene.name[1],gene.length=gene.length[1],snp.count=snp.count[1],pbs.r.perc=pbs.r.perc[1],pbs.g.perc=pbs.g.perc[1],dp.GR.perc=dp.GR.perc[1],
+                                               sig.snp.count=.N), by=.(LGn,GeneID)], 
+                  by=c("LGn","GeneID"),all=TRUE)
+  qtl_expr<-manual_qtl_check[qtl_expr, on = c("manual_check_region_start<gene_join_start","manual_check_region_end>gene_join_end","LGn"),nomatch=0L]
+  
+}  
+  {
+  setkey(GWAS, LGn, Start, End)
+  GWAS_manualQTL<-foverlaps(manual_qtl_check, GWAS, by.x = c("LGn","manual_check_region_start","manual_check_region_end"), by.y = c("LGn","Start","End"),type="any",nomatch=0L)
+  setkey(GWAS_manualQTL, LGn, Start, End)
+  GWAS_manualQTL_gene<-foverlaps(focal_qtl_gene,GWAS_manualQTL, by.x = c("LGn","start","stop"), by.y = c("LGn","Start","End"),type="any",nomatch=0L)
+}
+  
 #################################################################
 #  6.  Plot genomic map for each QTL
 #################################################################
@@ -253,5 +275,4 @@
     dev.off()
   } 
 }
-
 
