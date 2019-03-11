@@ -33,9 +33,11 @@ library(data.table)
 
 # Load data
 
-#setwd("/Users/pengfoen/OneDrive - University of Connecticut/Analyses_QTL")
-setwd("D:/Foen Peng/OneDrive - University of Connecticut/Analyses_Poolseq")
+setwd("/Users/pengfoen/OneDrive - University of Connecticut/Analyses_Poolseq")
+#setwd("D:/Foen Peng/OneDrive - University of Connecticut/Analyses_Poolseq")
 # These Fst values are corrected versions using "New_fst_GosRobSay_pools.R"
+if(file.exists("popgen_info_filter_seq_depth.csv")){
+  FstAll<-fread("popgen_info_filter_seq_depth.csv")}
 
 ### Load Fst data
 {
@@ -140,7 +142,6 @@ setwd("D:/Foen Peng/OneDrive - University of Connecticut/Analyses_Poolseq")
   
 }  
 
-
 #################################################################
 #  4.  Load Pi and Tajima's D of Rob population
 #################################################################
@@ -182,6 +183,8 @@ setwd("D:/Foen Peng/OneDrive - University of Connecticut/Analyses_Poolseq")
   # Smooth SNPs, only use the SNPs, which as reads number satisfy conditions
   temp_BinSNPs<-FstAll[,.("PBS.nSNPs" = .N,
                           "PBS.r" = mean(pbs.r,na.rm=T), 
+                          "PBS.g" = mean(pbs.g,na.rm=T), 
+                          "GRFst" = mean(GRFst.nonneg,na.rm=T), 
                           "dxy.GR"= mean(dxy.GR,na.rm=T),
                           "dxy.GS"= mean(dxy.GS,na.rm=T),
                           "dxy.RS"= mean(dxy.RS,na.rm=T),
@@ -237,8 +240,8 @@ setwd("D:/Foen Peng/OneDrive - University of Connecticut/Analyses_Poolseq")
   setkey(Pi_binned_cleaned,LGn,Pos)
   
   ######Combine all three tables
-  Pi_TajD_PBS<-TajD_binned_cleaned[PBS_binned]
-  Pi_TajD_PBS<-Pi_binned_cleaned[Pi_TajD_PBS]
+  Pi_TajD_PBS<-TajD_binned_cleaned[PBS_binned,on=c("LGn","Pos")]
+  Pi_TajD_PBS<-Pi_binned_cleaned[Pi_TajD_PBS,on=c("LGn","Pos")]
   
   ### combine statistics
   Pi_TajD_PBS[,combined.percentile.score:=Pi.percentile.score*D.percentile.score*PBS.percentile.score]
@@ -382,29 +385,32 @@ fst.plot(fst.dat = PBS_binned_df ,scaffold.widths=chr[,.(LGn,chr_length)],scaffs
   col<-c("darkblue","darkred","darkgreen","darkorange","darkmagenta")
   for(i in 1:length(statstoplot)){
     
-    plot(dat[LGn %in% c(focalLG) & Pos > minpos & Pos < maxpos,.(Pos/1000000,eval(parse(text = statstoplot[i])))], pch = 16, cex = 0.6, axes = T, xlab = paste("Chromosome",focalLG), ylab = statstoplot[i],col=col[i])
+    plot(dat[LGn %in% c(focalLG) & Pos > minpos & Pos < maxpos,.(Pos/1000000,eval(parse(text = statstoplot[i])))],pch = 16, cex = 0.6, axes = F, xlab = paste("Chromosome",focalLG), ylab = statstoplot[i],col=col[i])
     abline(v=dat[LGn %in% c(focalLG) & Pos > minpos & Pos < maxpos & eval(parse(text = paste(statstoplot[i],".focal",sep=""))),Pos/1000000],col=rgb(red=0,green=0,blue=0,alpha=100,maxColorValue = 255))
-  }
+    ticks<-seq(0,max(dat[LGn %in% c(focalLG),Pos])/1e6,1)
+    axis(1, at=ticks, labels = ticks)
+    axis(2)
+    }
   mtext(paste("Chromosome",focalLG),side=1,line=1, outer = TRUE)
   }
-PBS.r.cutoff <- quantile(Pi_TajD_PBS[,PBS.r],0.95,na.rm=T)
+PBS.r.cutoff <- quantile(Pi_TajD_PBS[,PBS.r],0.99,na.rm=T)
 Pi_TajD_PBS[,PBS.r.focal:= ifelse(PBS.r> PBS.r.cutoff, T, F)]
 
-dp.GR.cutoff <- quantile(Pi_TajD_PBS[,dp.GR],0.95,na.rm=T)
-Pi_TajD_PBS[,dp.GR.focal:= ifelse(dp.GR> dp.GR.cutoff, T, F)]
+PBS.g.cutoff <- quantile(Pi_TajD_PBS[,PBS.g],0.99,na.rm=T)
+Pi_TajD_PBS[,PBS.g.focal:= ifelse(PBS.g> PBS.g.cutoff, T, F)]
 
-Ra.r.cutoff <- quantile(Pi_TajD_PBS[,Ra.r],0.95,na.rm=T)
-Pi_TajD_PBS[,Ra.r.focal:= ifelse(Ra.r> Ra.r.cutoff, T, F)]
+GRFst.cutoff <- quantile(Pi_TajD_PBS[,GRFst],0.99,na.rm=T)
+Pi_TajD_PBS[,GRFst.focal:= ifelse(GRFst> GRFst.cutoff, T, F)]
 
-D.r.cutoff <- quantile(Pi_TajD_PBS[,D.r],0.05,na.rm=T)
+D.r.cutoff <- quantile(Pi_TajD_PBS[,D.r],0.01,na.rm=T)
 Pi_TajD_PBS[,D.r.focal:= ifelse(D.r< D.r.cutoff, T, F)]
 
-Pi.r.cutoff <- quantile(Pi_TajD_PBS[,Pi.r],0.05,na.rm=T)
+Pi.r.cutoff <- quantile(Pi_TajD_PBS[,Pi.r],0.01,na.rm=T)
 Pi_TajD_PBS[,Pi.r.focal:= ifelse(Pi.r< Pi.r.cutoff, T, F)]
 
 for (chromosome in 1:21) {
-  png(filename=sprintf("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Results/Foen/chr%s.pop.divergence.png", chromosome),width = 3000, height = 2000,res=300)
-  plotgene_bin(Pi_TajD_PBS,focalLG=chromosome, specifybps = F, minpos, maxpos, statstoplot = c("PBS.r", "dp.GR", "Ra.r","D.r","Pi.r"))
+  png(filename=sprintf("./Results/Foen/chr_map_5k_addFst/chr%s.pop.divergence_0.99.png", chromosome),width = 3000, height = 2000,res=300)
+  plotgene_bin(Pi_TajD_PBS,focalLG=chromosome, specifybps = F, minpos, maxpos, statstoplot = c("PBS.r", "PBS.g", "GRFst","D.r","Pi.r"))
   dev.off()
   } 
 }
