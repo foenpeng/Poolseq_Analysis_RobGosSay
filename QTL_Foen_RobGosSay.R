@@ -93,3 +93,37 @@
     
   }
 }
+
+# plot qtl for each LG
+
+plot_qtl_LGn <- function(dat, LG, maxpos, sig_level,statstoplot){
+  setkey(dat,LGn,Pos)
+  npops <- length(statstoplot)
+  par(mfrow = c(npops,1),mar = c(1.5,4,0.5,0.5), mgp = c(2, 0.75, 0), oma = c(3,0,2,0))
+  options(scipen=5)
+  col<-c("darkblue","darkred","darkgreen","darkorange","darkmagenta","gold4")
+  for(i in 1:length(statstoplot)){
+    dat_subplot<-dat[qtl.trait==statstoplot[i]]
+    chrpch <- ifelse(dat_subplot[,sig], 16, 1)
+    plot(dat_subplot[,.(Pos/1e6,abs_Z)],pch = chrpch, cex = 1.5, type="o", ylim=c(0,5), xlim=c(0,maxpos/1e6), axes = F, xlab = paste("Chromosome",LG), ylab = statstoplot[i],col=col[i])
+    abline(h=sig_level[qtl.trait==statstoplot[i],V1], lty=5, col='black')
+    text(dat_subplot[,.(Pos/1e6,abs_Z)], labels = dat_subplot[,snp.id],cex=1, pos=3)
+    if(dat_subplot[sig==T,.N]>0){
+      abline(v=dat_subplot[sig==T,Pos/1e6],lwd=4, col=rgb(red=0,green=0,blue=0,alpha=100,maxColorValue = 255))
+      text(dat_subplot[sig==T,.(Pos/1e6,abs_Z-2)], labels = dat_subplot[sig==T,round(Pos/1e6,2)],cex=1, pos=3)
+    }
+    axis(1, at=seq(0,maxpos/1e6,0.5), labels = F)
+    axis(1, at=seq(0,maxpos/1e6,1), labels = seq(0,maxpos/1e6,1))
+    axis(2)
+  }
+  mtext(paste("Chromosome",LG),side=1,line=1, outer = TRUE)
+}
+
+
+trait<-unique(qtl_all[,qtl.trait])
+sig_level<-qtl_all[sig==FALSE, max(abs_Z), by=qtl.trait]
+for(LG in 1:21){
+  png(sprintf("./result/Foen/QTL_per_LG/LG%s_QTL.png",LG), width = 3000, height = 2000,res=300)
+  plot_qtl_LGn(qtl_all[LGn==LG,],LG,maxpos=Chrlengths[LG], sig_level,statstoplot = trait)
+  dev.off()
+}

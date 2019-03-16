@@ -26,14 +26,15 @@ convert_LG_name<-function(dataset, LG_column){
   gene_LG<-fread("./Analysis_Expression/Data files RAW/GeneID to LinkageGroup.csv",header = TRUE)
   setnames(gene_name,c("Ensembl Gene ID","Associated Gene Name"),c("GeneID","gene.name"))
   convert_LG_name(gene_LG, "LinkageGroup")
-  gene_LG[,GeneID:=V1]
+  # LG file has a space at the begining of GeneID.
+  gene_LG[,GeneID:=substring(V1,2)]
   
   setkey(gene_loc,GeneID)
   setkey(gene_LG, GeneID)
   setkey(gene_name,GeneID)
   
   # merge three tables to gene_info
-  gene_info<-gene_LG[gene_loc]
+  gene_info<-gene_LG[gene_loc, on=c("GeneID")]
   gene_info<-gene_info[gene_name]
   gene_info<-gene_info[,!c("V1", "LinkageGroup")]
   setkey(gene_info,LGn,Start,Stop)
@@ -43,6 +44,8 @@ convert_LG_name<-function(dataset, LG_column){
   gene_info[,c("gene_start","gene_end"):=list(min(Start),max(Stop)),by=GeneID]
   gene_info[Start==gene_start&Stop==gene_end,full:=TRUE]
   gene_info[,c("gene_start","gene_end"):=NULL]
+  
+  region_to_plot<-fread("./Analyses_Combined/results/Foen/region_roomin.csv")
   
   popgen_all<-fread("./Analyses_Poolseq/popgen_info_filter_seq_depth.csv",header = T)
   
@@ -83,8 +86,49 @@ for (i in gene_to_plot) {
   exon_plot<-gene_info_plot[full==FALSE,.(Start,Stop)]
   SNP_plot<-popgen_all[LGn==LGn_plot & Pos >= gene_start_plot & Pos <= gene_end_plot,.SD,keyby=Pos]
   plot_gene(SNP_plot,focalLG=LGn_plot, minpos=gene_start_plot, maxpos=gene_end_plot, gene.name=gene_name_plot,gene.id=i, exon=exon_plot,
-           statstoplot = c("dp.GR", "pbs.r","pbs.g"))
+           statstoplot = c("dp.GR","pbs.r","pbs.g"))
   #dev.off()
 } 
 
+#################################################################
+#  4.  plot region of interests
+#################################################################
+plot_region <- function(dat, focalLG, minpos, maxpos, gene.name, gene.id, exon, statstoplot){
+  npops <- length(statstoplot)
+  par(mfrow = c(npops,1),mar = c(1.5,4,0.5,0.5), mgp = c(2, 0.75, 0), oma = c(3,0,2,0))
+  
+  options(scipen=5)
+  col<-c("darkblue","darkred","darkgreen","darkorange","darkmagenta")
+  for(i in 1:length(statstoplot)){
+    if(statstoplot[i] %in% c("dp.GR","GRFst.nonneg")){
+      y_lim=c(0,1)
+    }else{
+      y_lim=c(0,5)
+    }
+    plot(dat[,.(Pos,eval(parse(text = statstoplot[i])))], pch = 16, cex = 0.5, axes = F, ylim=y_lim, ylab = statstoplot[i],col=col[i])
+    rect(exon[,Start], 0,  exon[,Stop],y_lim[2], border = rgb(1,0,0,0) , lwd = 1, col = rgb(1,0,0,0.1))
+    text(exon[,(Start+Stop)/2],y_lim[2],labels = paste(substr(gene.id,14,nchar(gene.id)),gene.name,sep="\n"),cex=0.7, pos=1)
+    axis(1, at=seq(minpos,maxpos,0.025E6), labels = F)
+    axis(1, at=seq(minpos,maxpos,0.05E6), labels = seq(minpos/1e6,maxpos/1e6,0.05))
+    axis(2)
+  }
+  mtext(paste("LG",focalLG,":", minpos,"-",maxpos),side=1,line=1, outer = TRUE)
+}
 
+
+for (i in 1:region_to_plot[,.N]) {
+  LGn_plot<-region_to_plot[i,LGn]
+  region_start_plot<-region_to_plot[i,start]
+  region_end_plot<-region_to_plot[i,end]
+  
+  png(filename=sprintf("./Analyses_Poolseq/Results/Foen/Region_zoomin/LG%s_%s-%s.png",LGn_plot,region_start_plot/1e6,region_end_plot/1e6),width = 3000, height = 2000,res=300)
+
+  gene_info_plot<-gene_info[Start>region_start_plot & Stop<region_end_plot & LGn==LGn_plot,]
+  gene_name_plot<-gene_info_plot[full==TRUE,gene.name]
+  gene_id_plot<-gene_info_plot[full==TRUE,GeneID]
+  exon_plot<-gene_info_plot[full==TRUE,.(Start, Stop)]
+  SNP_plot<-popgen_all[LGn==LGn_plot & Pos >= region_start_plot & Pos <= region_end_plot,.SD,keyby=Pos]
+  plot_region(SNP_plot,focalLG=LGn_plot, minpos=region_start_plot, maxpos=region_end_plot, gene.name=gene_name_plot,gene.id=gene_id_plot, exon=exon_plot,
+            statstoplot = c("dp.GR","GRFst.nonneg", "pbs.r","pbs.g"))
+  dev.off()
+} 
