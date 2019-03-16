@@ -109,6 +109,7 @@ if(file.exists("popgen_info_filter_seq_depth.csv")){
   FstAll[,NreadsOK:=F]
   FstAll[GosNreads >=min_cov & RobNreads >=min_cov & SayNreads >=min_cov & GosNreads <=max_cov & RobNreads <=max_cov & SayNreads <=max_cov,
          NreadsOK:= T]
+  
   FstAll<-FstAll[NreadsOK==T,]
 } 
 
@@ -139,6 +140,7 @@ if(file.exists("popgen_info_filter_seq_depth.csv")){
   # save a copy of SNP information
   #FstSave<-FstAll[NreadsOK == T,]
   #fwrite(FstSave,"popgen_info_filter_seq_depth.csv")
+  #fwrite(FstAll[NreadsOK==F,],"popgen_info_filter_seq_depth_FALSE.csv")
   
 }  
 
@@ -254,9 +256,49 @@ if(file.exists("popgen_info_filter_seq_depth.csv")){
                                         combined.percentile.score,combined.percentile)]
   combined_top5<-Pi_TajD_PBS_cleaned[combined.percentile<0.05,]
   
-  fwrite(combined_top5, "Pi_TajD_PBS_smoothed_top5percent.csv")
-  fwrite(Pi_TajD_PBS_cleaned, "Pi_TajD_PBS_smoothed_full.csv")
+  #fwrite(combined_top5, "Pi_TajD_PBS_smoothed_top5percent.csv")
+  #fwrite(Pi_TajD_PBS_cleaned, "Pi_TajD_PBS_smoothed_full.csv")
 
+########## sliding window
+{
+  windowsize <- 50000
+  stepsize<-10000
+  
+  chr <- FstAll[, .(chr_length = max(Pos)), by = LGn]
+  #chr[,cumulative_chrlengths := cumsum(chr_length)]
+  #chr[,cumulative_chrSTART := shift(cumulative_chrlengths,1,0,"lag")]
+  chr_slide<-chr[rep(1:.N,(chr_length)%/%stepsize+1)][,.(window_start=(0:.N)*stepsize, window_end=((0:.N)*stepsize+windowsize),chr_length=chr_length), by = LGn]
+  chr_slide<-chr_slide[window_end<chr_length+stepsize]
+  FstAll[,Pos_join:=Pos]
+  PBS_slide<-FstAll[chr_slide, 
+                      on=c("LGn","Pos_join>window_start","Pos_join<window_end"), 
+                      allow.cartesian=T][,.("PBS.nSNPs" = .N,
+                                            "PBS.r" = mean(pbs.r,na.rm=T), 
+                                            "PBS.g" = mean(pbs.g,na.rm=T), 
+                                            "GRFst" = mean(GRFst.nonneg,na.rm=T), 
+                                            "dxy.GR"= mean(dxy.GR,na.rm=T),
+                                            "dxy.GS"= mean(dxy.GS,na.rm=T),
+                                            "dxy.RS"= mean(dxy.RS,na.rm=T),
+                                            "dp.GR"= mean(dp.GR,na.rm=T),
+                                            "window_end" = Pos_join.1[1]),
+                                            by=.(LGn,Pos_join)]
+  Pi_r[,Pos_join:=Pos]
+  Pi_slide<-Pi_r[chr_slide, 
+                    on=c("LGn","Pos_join>window_start","Pos_join<window_end"), 
+                    allow.cartesian=T][,.("Pi.r" = mean(Pi.r,na.rm=T), 
+                                          "window_end" = Pos_join.1[1]),
+                                       by=.(LGn,Pos_join)]
+  TajD_r[,Pos_join:=Pos]
+  D_slide<-TajD_r[chr_slide, 
+                 on=c("LGn","Pos_join>window_start","Pos_join<window_end"), 
+                 allow.cartesian=T][,.("D.r" = mean(D.r,na.rm=T), 
+                                       "window_end" = Pos_join.1[1]),
+                                    by=.(LGn,Pos_join)]
+  PBS_Pi_slide<-PBS_slide[Pi_slide, on=c("LGn","Pos_join","window_end")]
+  PBS_Pi_D_slide<-PBS_Pi_slide[D_slide, on=c("LGn","Pos_join","window_end")]
+  setnames(PBS_Pi_D_slide, "Pos_join", "window_start")
+  PBS_Pi_D_slide[,Pos:=(window_end+window_start)/2]
+}
 #################################################################
 #  6.  Calculate statistics for every gene 
 #################################################################
@@ -388,29 +430,33 @@ fst.plot(fst.dat = PBS_binned_df ,scaffold.widths=chr[,.(LGn,chr_length)],scaffs
     plot(dat[LGn %in% c(focalLG) & Pos > minpos & Pos < maxpos,.(Pos/1000000,eval(parse(text = statstoplot[i])))],pch = 16, cex = 0.6, axes = F, xlab = paste("Chromosome",focalLG), ylab = statstoplot[i],col=col[i])
     abline(v=dat[LGn %in% c(focalLG) & Pos > minpos & Pos < maxpos & eval(parse(text = paste(statstoplot[i],".focal",sep=""))),Pos/1000000],col=rgb(red=0,green=0,blue=0,alpha=100,maxColorValue = 255))
     ticks<-seq(0,max(dat[LGn %in% c(focalLG),Pos])/1e6,1)
-    axis(1, at=ticks, labels = ticks)
+    axis(1, at=seq(0,maxpos/1e6,0.5), labels = F)
+    axis(1, at=seq(0,maxpos/1e6,1), labels = seq(0,maxpos/1e6,1))
     axis(2)
     }
   mtext(paste("Chromosome",focalLG),side=1,line=1, outer = TRUE)
   }
-PBS.r.cutoff <- quantile(Pi_TajD_PBS[,PBS.r],0.99,na.rm=T)
-Pi_TajD_PBS[,PBS.r.focal:= ifelse(PBS.r> PBS.r.cutoff, T, F)]
 
-PBS.g.cutoff <- quantile(Pi_TajD_PBS[,PBS.g],0.99,na.rm=T)
-Pi_TajD_PBS[,PBS.g.focal:= ifelse(PBS.g> PBS.g.cutoff, T, F)]
+dat_plot <- PBS_Pi_D_slide  
 
-GRFst.cutoff <- quantile(Pi_TajD_PBS[,GRFst],0.99,na.rm=T)
-Pi_TajD_PBS[,GRFst.focal:= ifelse(GRFst> GRFst.cutoff, T, F)]
+PBS.r.cutoff <- quantile(dat_plot[,PBS.r],0.99,na.rm=T)
+dat_plot[,PBS.r.focal:= ifelse(PBS.r> PBS.r.cutoff, T, F)]
 
-D.r.cutoff <- quantile(Pi_TajD_PBS[,D.r],0.01,na.rm=T)
-Pi_TajD_PBS[,D.r.focal:= ifelse(D.r< D.r.cutoff, T, F)]
+PBS.g.cutoff <- quantile(dat_plot[,PBS.g],0.99,na.rm=T)
+dat_plot[,PBS.g.focal:= ifelse(PBS.g> PBS.g.cutoff, T, F)]
 
-Pi.r.cutoff <- quantile(Pi_TajD_PBS[,Pi.r],0.01,na.rm=T)
-Pi_TajD_PBS[,Pi.r.focal:= ifelse(Pi.r< Pi.r.cutoff, T, F)]
+GRFst.cutoff <- quantile(dat_plot[,GRFst],0.99,na.rm=T)
+dat_plot[,GRFst.focal:= ifelse(GRFst> GRFst.cutoff, T, F)]
+
+D.r.cutoff <- quantile(dat_plot[,D.r],0.01,na.rm=T)
+dat_plot[,D.r.focal:= ifelse(D.r< D.r.cutoff, T, F)]
+
+Pi.r.cutoff <- quantile(dat_plot[,Pi.r],0.01,na.rm=T)
+dat_plot[,Pi.r.focal:= ifelse(Pi.r< Pi.r.cutoff, T, F)]
 
 for (chromosome in 1:21) {
-  png(filename=sprintf("./Results/Foen/chr_map_5k_addFst/chr%s.pop.divergence_0.99.png", chromosome),width = 3000, height = 2000,res=300)
-  plotgene_bin(Pi_TajD_PBS,focalLG=chromosome, specifybps = F, minpos, maxpos, statstoplot = c("PBS.r", "PBS.g", "GRFst","D.r","Pi.r"))
+  png(filename=sprintf("./Results/Foen/chr_map_50k_slide/chr%s.pop.divergence_0.99.png", chromosome),width = 3000, height = 2000,res=300)
+  plotgene_bin(dat_plot,focalLG=chromosome, specifybps = F, minpos, maxpos, statstoplot = c("PBS.r", "PBS.g", "GRFst","D.r","Pi.r"))
   dev.off()
   } 
 }

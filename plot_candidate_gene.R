@@ -76,6 +76,7 @@ plot_gene <- function(dat, focalLG, specifybps = F, minpos, maxpos, gene.name, g
 }
 
 gene_to_plot<-c("ENSGACG00000015539","ENSGACG00000015530","ENSGACG00000017437","ENSGACG00000011442","ENSGACG00000006953","ENSGACG00000015137")
+gene_to_plot<-c("ENSGACG00000015525")
 for (i in gene_to_plot) {
   #png(filename=sprintf("/Users/pengfoen/Documents/Research/Bolnick lab/Analyses_Poolseq/Results/Foen/chr%s.pop.divergence.png", chromosome),width = 3000, height = 2000,res=300)
   gene_info_plot<-gene_info[GeneID==i,]
