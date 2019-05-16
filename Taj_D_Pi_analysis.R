@@ -82,12 +82,12 @@ setwd("/Users/pengfoen/OneDrive - University of Connecticut/Analyses_Poolseq")
 }
 
 
-dat<-Pi_r
-var<-Pi.r
-Chr<-2
+dat<-Pi_g
+var_plot<-"Pi.g"
+Chr<-12
 
 maxpos<-max(dat[LGn==Chr,Pos])
-plot(dat[LGn==Chr,.(Pos/1000000,var)],pch = 16, cex = 0.6,axes=F)
+plot(dat[LGn==Chr,.(Pos/1e6,get(var_plot))],pch = 16, cex = 0.6, axes=F, xlab = paste0("Chr ",Chr), ylab = var_plot)
 ticks<-seq(0,maxpos/1e6,1)
 axis(1, at=seq(0,maxpos/1e6,0.5), labels = F)
 axis(1, at=seq(0,maxpos/1e6,1), labels = seq(0,maxpos/1e6,1))
