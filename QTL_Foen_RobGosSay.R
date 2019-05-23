@@ -68,7 +68,7 @@
   # some data clearning and saving the file
   setnames(qtl_all_focal_snp,"width", "qtl.focal.region.width")
   qtl_all_focal_snp[,c("focal.qtl.start","focal.qtl.end","start","end"):=NULL]
-  fwrite(qtl_all_focal_snp,"./result/Foen/QTL_AllTraits_snp_in_focal_region.csv")
+  #fwrite(qtl_all_focal_snp,"./result/Foen/QTL_AllTraits_snp_in_focal_region.csv")
 }  
 
 # plot qtl for each trait
@@ -76,7 +76,7 @@
   for(i in qtl_all_focal_snp[,unique(qtl.trait)]){
     qtl_plot<-subset(qtl_all_focal_snp, qtl.trait==i)
     
-    png(sprintf("./result/Foen/%s_QTL.png",i), width = 4000, height = 2000,res=300)
+    #png(sprintf("./result/Foen/%s_QTL.png",i), width = 4000, height = 2000,res=300)
     setkey(qtl_plot,LGn,Pos)
     chrcol <- 2+2*as.numeric(qtl_plot[,LGn] %%2 == 1)
     chrpch <- ifelse(qtl_plot[,sig], 16, 1)
@@ -89,7 +89,7 @@
     rect(Cumulative_ChrSTART,0,Cumulative_Chrlengths,6,border = rgb(0,0,0,0.5), lwd = 2)
     focal_region_plot<-na.omit(qtl_plot[,.(unique(qtl.focal.region.cum.start),unique(qtl.focal.region.cum.end))])
     rect(focal_region_plot[,V1], 0,  focal_region_plot[,V2],6, border = rgb(1,0,0,0.2) , lwd = 2, col = rgb(1,0,0,0.2))
-    dev.off()
+    #dev.off()
     
   }
 }
@@ -127,3 +127,33 @@ for(LG in 1:21){
   plot_qtl_LGn(qtl_all[LGn==LG,],LG,maxpos=Chrlengths[LG], sig_level,statstoplot = trait)
   dev.off()
 }
+
+
+
+# plot worm mass only for poster in Evolution meeting 2019
+{
+
+  pdf(file="Evol2019_poster_WormMass_QTL.pdf", width = 12, height = 5)
+    
+  qtl_plot<-subset(qtl_all_focal_snp, qtl.trait=="MaxWormMass")
+  
+  #png(sprintf("./result/Foen/%s_QTL.png",i), width = 4000, height = 2000,res=300)
+  setkey(qtl_plot,LGn,Pos)
+  chrcol <- 2+2*as.numeric(qtl_plot[,LGn] %%2 == 1)
+  chrpch <- ifelse(qtl_plot[,sig], 16, 1)
+  plot(qtl_plot[,Cumulative_position],qtl_plot[,abs_Z], col='black', type = 'o', axes=F, xlab = "Linkage Group", ylab = "QTL (Z score)",pch=16, cex=0.5, ylim = c(0, 6))
+  #text(qtl_plot[sig==T,Cumulative_position],qtl_plot[sig==T,abs_Z], labels = qtl_plot[sig==T,snp.id],cex=0.7, pos=2)
+  abline(h=qtl_plot[sig==FALSE, max(abs_Z)], lty=5, col='black')
+  Chr.mid <- Cumulative_ChrSTART + Chrlengths / 2
+  axis(2)
+  axis(1, at= Chr.mid, labels = 1:21)
+  rect(Cumulative_ChrSTART,0,Cumulative_Chrlengths,6,border = NA, lwd = 0.1, col= rep(c(NA,rgb(0,0,0,alpha=0.1)),12) )
+  
+  #rect(Cumulative_ChrSTART,0,Cumulative_Chrlengths,6,border = rgb(0,0,0,0.5), lwd = 2)
+  #focal_region_plot<-na.omit(qtl_plot[,.(unique(qtl.focal.region.cum.start),unique(qtl.focal.region.cum.end))])
+  #rect(focal_region_plot[,V1], 0,  focal_region_plot[,V2],6, border = rgb(1,0,0,0.2) , lwd = 2, col = rgb(1,0,0,0.2))
+  dev.off()
+
+}
+
+
