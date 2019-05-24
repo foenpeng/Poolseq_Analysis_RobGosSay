@@ -133,7 +133,7 @@ for(LG in 1:21){
 # plot worm mass only for poster in Evolution meeting 2019
 {
 
-  pdf(file="Evol2019_poster_WormMass_QTL.pdf", width = 12, height = 5)
+  pdf(file="Evol2019_poster_WormMass_QTL.pdf", width = 15, height = 7)
     
   qtl_plot<-subset(qtl_all_focal_snp, qtl.trait=="MaxWormMass")
   
@@ -141,12 +141,14 @@ for(LG in 1:21){
   setkey(qtl_plot,LGn,Pos)
   chrcol <- 2+2*as.numeric(qtl_plot[,LGn] %%2 == 1)
   chrpch <- ifelse(qtl_plot[,sig], 16, 1)
-  plot(qtl_plot[,Cumulative_position],qtl_plot[,abs_Z], col='black', type = 'o', axes=F, xlab = "Linkage Group", ylab = "QTL (Z score)",pch=16, cex=0.5, ylim = c(0, 6))
+  plot(qtl_plot[,Cumulative_position],qtl_plot[,abs_Z], col='black', type = 'o', axes=F, 
+       xlab = "Linkage Group", ylab = "QTL (Z score)",pch=20, ylim = c(0, 6),
+       cex.lab=1.5)
   #text(qtl_plot[sig==T,Cumulative_position],qtl_plot[sig==T,abs_Z], labels = qtl_plot[sig==T,snp.id],cex=0.7, pos=2)
   abline(h=qtl_plot[sig==FALSE, max(abs_Z)], lty=5, col='black')
   Chr.mid <- Cumulative_ChrSTART + Chrlengths / 2
-  axis(2)
-  axis(1, at= Chr.mid, labels = 1:21)
+  axis(2, cex.axis=1.5)
+  axis(1, at= Chr.mid, labels = 1:21, cex.axis=1.5)
   rect(Cumulative_ChrSTART,0,Cumulative_Chrlengths,6,border = NA, lwd = 0.1, col= rep(c(NA,rgb(0,0,0,alpha=0.1)),12) )
   
   #rect(Cumulative_ChrSTART,0,Cumulative_Chrlengths,6,border = rgb(0,0,0,0.5), lwd = 2)
@@ -156,4 +158,32 @@ for(LG in 1:21){
 
 }
 
+{
+plot_qtl_LGn <- function(dat, LG, maxpos, sig_level,statstoplot){
+  setkey(dat,LGn,Pos)
+  npops <- length(statstoplot)
+  par(mfrow = c(npops,1),mar = c(1.5,4,0.5,0.5), mgp = c(2, 0.75, 0), oma = c(3,0,2,0))
+  options(scipen=5)
+  col<-c("darkblue","darkred","darkgreen","darkorange","darkmagenta","gold4")
+  for(i in 1:length(statstoplot)){
+    dat_subplot<-dat[qtl.trait==statstoplot[i]]
+    chrpch <- ifelse(dat_subplot[,sig], 16, 1)
+    plot(dat_subplot[,.(Pos/1e6,abs_Z)],pch = 20, cex.lab = 1.5, type="o", ylim=c(0,6), xlim=c(0,maxpos/1e6), axes = F, xlab = paste("Chromosome",LG, "Mb"), ylab = "QTL (Z score)")
+    abline(h=sig_level[qtl.trait==statstoplot[i],V1], lty=5, col='black')
+    axis(1, at=seq(0,maxpos/1e6,0.5), labels = F, cex.axis=1.3)
+    axis(1, at=seq(0,maxpos/1e6,1), labels = seq(0,maxpos/1e6,1), cex.axis=1.3)
+    axis(2, cex.axis=1.5)
+  }
+  mtext(paste("Chromosome",LG),side=1,line=1, outer = TRUE, cex=1.5)
+}
+
+
+trait<-unique(qtl_all[,qtl.trait])
+sig_level<-qtl_all[sig==FALSE, max(abs_Z), by=qtl.trait]
+
+pdf(file="Evol2019_poster_WormMass_QTL_LG12.pdf", width = 15, height = 4)
+plot_qtl_LGn(qtl_all[LGn==12,],12,maxpos=Chrlengths[12], sig_level,statstoplot = "MaxWormMass")
+dev.off()
+
+}
 
